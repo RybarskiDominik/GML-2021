@@ -17,4 +17,4 @@ Małżeństwa są określane poprzez ich ID oraz kolor jest to spowodowane techn
 ![IDM](https://github.com/RybarskiDominik/GML-2021/assets/127627343/e642f0ee-7e89-430b-a531-1444ceac7850)
 
 
-Rozporządzenie Ministra Rozwoju, Pracy i Technologii z dnia 23 lipca 2021 r. w sprawie bazy danych obiektów topograficznych oraz mapy zasadniczej.
+Rozporządzenie Ministra Rozwoju, Pracy i Technologii z dnia 27 lipca 2021 r. w sprawie ewidencji gruntów i budynków.
