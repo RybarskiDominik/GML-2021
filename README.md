@@ -1,4 +1,4 @@
-# [Pobierz GML-2021.](https://github.com/RybarskiDominik/GML-2021/releases/download/GML/GML-2021-Windows_Installer_64bit.exe)
+# [Pobierz GML-2021.](https://github.com/RybarskiDominik/GML-2021/releases/latest)
 Program umożliwia podstawowy odczyt danych osobowych oraz wizualizację danych pozyskanych z pliku GML udostepnionych z PODGiK.
 
 Wizualizacja małżeństw:
