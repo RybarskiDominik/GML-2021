@@ -5,11 +5,12 @@ Wizualizacja małżeństw:
 
 Małżeństwa są określane poprzez ich ID oraz kolor jest to spowodowane technicznymi ograniczeniami podczas programowania, chęcią zachowania spójności oraz przejrzystość wizualizacji danych.
 
-![IDM](https://github.com/RybarskiDominik/GML-2021/assets/127627343/e642f0ee-7e89-430b-a531-1444ceac7850)
+![image](https://github.com/RybarskiDominik/GML-2021/assets/127627343/86cc5e40-71e0-4c8f-b796-e42ee0881361)
 
 
 Strona startowa:
-![Strona Startowa](https://github.com/RybarskiDominik/GML-2021/assets/127627343/c915ae1c-03de-486a-a17c-5347d62895b9)
+![image](https://github.com/RybarskiDominik/GML-2021/assets/127627343/785a5df2-23d7-439c-b936-d509473356d0)
+
 Wizualizacja GML:
 ![GML 2021 v3](https://github.com/RybarskiDominik/GML-2021/assets/127627343/1fe1df0a-62a4-4cc7-9569-f77f3c89d6ee)
 
