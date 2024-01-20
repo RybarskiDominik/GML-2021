@@ -1,4 +1,4 @@
-![GML 2021 v3](https://github.com/RybarskiDominik/GML-2021/assets/127627343/30c44ca7-2a23-492e-a876-eecc371370a4)# [Pobierz GML-2021.](https://github.com/RybarskiDominik/GML-2021/releases/latest)
+# [Pobierz GML-2021.](https://github.com/RybarskiDominik/GML-2021/releases/latest)
 Program umożliwia podstawowy odczyt danych osobowych oraz wizualizację danych pozyskanych z pliku GML udostepnionych z PODGiK.
 
 Wizualizacja małżeństw:
