@@ -5,3 +5,9 @@ GML/Parsed_GML.gml
 log.log
 GML.py
 *.xlsx
+build
+dist
+GML.spec
+Output/GML-2021 Setup.exe
+.venv
+.ini
