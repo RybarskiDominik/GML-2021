@@ -10,3 +10,4 @@ dist
 GML.spec
 Output/GML-2021 Setup.exe
 .venv
+.ini
