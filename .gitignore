@@ -1,6 +1,19 @@
-GML/insurance.db
-GML/GML.xlsx
-GML/Parsed_GML.gml
+__pycache__
+
+build
+dist
+GML
+
 *.gml
+*.exe
+*.venv
+*.ini
+*.exe
+*.spec
+*.xlsx
+
+Kompilator GML.iss
+Parsed_GML.gml
+GML.xlsx
+GML.spec
 log.log
-GML.py
