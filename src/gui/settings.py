@@ -158,7 +158,7 @@ if __name__ == '__main__':
     
     try:
         if settings.value('DarkMode', True, type=bool):
-            app.setStyleSheet(Path('gui/Stylesheets/Darkmode.qss').read_text())        
+            app.setStyleSheet(Path('Stylesheets/Darkmode.qss').read_text())        
         else:
             app.setStyleSheet("""
             QGraphicsView {
