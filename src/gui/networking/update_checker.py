@@ -1,7 +1,8 @@
 import urllib.parse
 import urllib.request
-import json
+import logging
 import ctypes
+import json
 import sys
 import re
 
@@ -27,17 +28,22 @@ class VS_FIXEDFILEINFO(ctypes.Structure):
 def check_app_update_status():
     file_version, product_version = get_file_and_product_version()
     app_version = get_latest_app_version()
-
-    app_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', app_version).split()))
-    file_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', file_version).split()))
-    product_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', product_version).split()))
     
-    print(app_version, file_version, product_version, sep='\n')
+    try:
+        if app_version:
+            app_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', app_version).split()))
+            if len(app_version) == 3:
+                app_version.append(0)
+        file_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', file_version).split()))
+        product_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', product_version).split()))
+    except Exception as e:
+        logging.exception(e)
 
-    if len(app_version) == 3:
-        app_version.append(0)
+    #print(app_version, file_version, product_version, sep='\n')
 
-    if app_version is False or not app_version:
+    if app_version is None:
+        return "Offline"
+    elif app_version is False or not app_version:
         return None
     elif app_version == file_version or app_version == product_version:
         return False  # Installed version is the same
@@ -103,13 +109,19 @@ def get_latest_app_version():
     request = urllib.request.Request(api_url_str, headers=headers)
 
     # Send the GET request and handle the response
-    with urllib.request.urlopen(request) as response:
-        if response.status == 200:
-            data = json.loads(response.read().decode())
-            return data["tag_name"]
-        else:
-            print(f"Request failed with status code: {response.status}")
-            return False
+    try:
+        with urllib.request.urlopen(request) as response:
+            if response.status == 200:
+                # Odczyt danych w formacie JSON i zwrócenie wartości klucza "tag_name"
+                data = json.loads(response.read().decode())
+                return data["tag_name"]
+            else:
+                print(f"Request failed with status code: {response.status}")
+                return False
+    except urllib.error.URLError as e:
+        logging.exception(e)
+        print(f"Failed to reach the server. Reason: {e.reason}")
+        return None
 
 if __name__ == "__main__":
     print(check_app_update_status())
