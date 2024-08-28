@@ -118,11 +118,16 @@ class SettingsWindow(QMainWindow):
         self.button_Reset.clicked.connect(self.anuluj)
 
     def check_update(self):
+        app_update_status = None
         try:
             app_update_status = check_app_update_status()
         except Exception as e:
             logging.exception(e)
-        print(app_update_status)
+        #print(app_update_status)
+
+        if app_update_status == "Offline":
+            self.button_check_update.setText("Brak Internetu!")
+            self.button_check_update.setStyleSheet('')
         if app_update_status == True:  
             self.button_check_update.setText("Dostępna jest aktualizacja.") 
             self.button_check_update.setStyleSheet('background-color: "#975D9F"')    
