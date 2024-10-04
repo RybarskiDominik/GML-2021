@@ -437,7 +437,7 @@ class MyWindow(QMainWindow):
             try:
                 df_uzytki = pd.DataFrame(gml_użytek(target_path_for_GML))  # path_U
                 GlobalInterpreter.uzytki_gml = df_uzytki
-                GlobalInterpreter.statusdropużytki = False
+                GlobalInterpreter.status_użytki == True
             except Exception as e:
                 logging.exception(e)
                 self.message("Error Użytki!", "#ab2c0c")
