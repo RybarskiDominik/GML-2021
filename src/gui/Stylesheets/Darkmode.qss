@@ -34,7 +34,7 @@ QToolButton:hover {
 
 QGraphicsView {
     border: none;
-    background-color: lightgray;
+    background-color: #e0e0e0;
 }
 
 QCheckBox {
@@ -106,11 +106,24 @@ QTableWidget::item:selected {
     color: white;
     background-color: #4d4d4d;
 }
+QTableView {
+    background-color: #242424;
+    gridline-color: none;
+    color: #ffffff;
+    border-style: none;
+    border: none;
+    border-top: 1px solid black;
+}
+QTableView::item:selected {
+    color: white;
+    background-color: #4d4d4d;
+}
 QTableView QTableCornerButton::section {
     background: #2e2e2e;
     border: 1px outset black;
-    border-top: 0px solid black;   
+    border-top: 0px solid black;    
 }
+
 QHeaderView {
     color: white;
     background-color: #2e2e2e;
