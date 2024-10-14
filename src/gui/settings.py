@@ -5,10 +5,7 @@ from PySide6.QtCore import Qt,QRect, QSettings, QCoreApplication
 from PySide6.QtGui import QIcon
 from PySide6 import QtWidgets
 
-try:
-    from .networking.update_checker import check_app_update_status
-except:
-    from networking.update_checker import check_app_update_status
+from networking.update_checker import check_app_update_status
 
 from pathlib import Path
 import logging
@@ -17,8 +14,8 @@ import os
 
 
 class SettingsWindow(QMainWindow):
-    def __init__(self, dark_mode_enabled=None):
-        super(SettingsWindow,self).__init__()
+    def __init__(self, dark_mode_enabled=None, versja=None):
+        super(SettingsWindow, self).__init__()
         app_update_status = None
         self.settings = QSettings('GML', 'GML Reader')
 
@@ -33,8 +30,8 @@ class SettingsWindow(QMainWindow):
             """)
 
         self.setFixedSize(350, 400)
-        self.setWindowTitle('Preferencje')
-        self.setWindowIcon(QIcon(r'gui\Icons\GML.ico'))
+        self.setWindowTitle(f'GML Reader wersja: {versja}')
+        self.setWindowIcon(QIcon(r'gui\Stylesheets\GML.ico'))
         
         self.config()
         
@@ -49,7 +46,8 @@ class SettingsWindow(QMainWindow):
             save_value.append((i, value))
         self.save_value = save_value  # save settings for recovery
         if self.save_value:
-            print(self.save_value)
+            #print(self.save_value)
+            pass
     
     def init_UI(self):
         group_main = QGroupBox("GML", self)
@@ -78,9 +76,20 @@ class SettingsWindow(QMainWindow):
         if self.settings.value('DarkMode', False, type=bool) == True:
             self.dark_mode.setChecked(True)
 
+        self.full_scene = QCheckBox('FullScene', self)
+        if self.settings.value('FullScene', True, type=bool) == True:
+            self.full_scene.setChecked(True)
+
+        self.uproszczona_mapa = QCheckBox('Uproszczona mapa?', self)
+        if self.settings.value('UproszczonaMapa', True, type=bool) == True:
+            self.uproszczona_mapa.setChecked(True)
+
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.addWidget(self.dark_mode)
+        layout.addWidget(self.full_scene)
+        layout.addWidget(self.uproszczona_mapa)
+
         group_app.setLayout(layout)
 
 
@@ -124,7 +133,6 @@ class SettingsWindow(QMainWindow):
         except Exception as e:
             logging.exception(e)
         #print(app_update_status)
-
         if app_update_status == "Offline":
             self.button_check_update.setText("Brak Internetu!")
             self.button_check_update.setStyleSheet('')
@@ -146,6 +154,8 @@ class SettingsWindow(QMainWindow):
         self.settings.setValue("DarkMode", self.dark_mode.isChecked())
         self.settings.setValue("MapStaysOnTopHint", self.map_flag.isChecked())
         self.settings.setValue("FullID", self.points_id.isChecked())
+        self.settings.setValue("FullScene", self.full_scene.isChecked())
+        self.settings.setValue("UproszczonaMapa", self.uproszczona_mapa.isChecked())
         #settings.setValue("windowSize", self.size())
         self.close()
 
