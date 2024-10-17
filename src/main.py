@@ -1186,7 +1186,7 @@ if __name__ == '__main__':
 
     try:
         if dark_mode_enabled:
-            app.setStyleSheet(Path('gui/Stylesheets/Darkmode.qss').read_text())
+            app.setStyleSheet(Path(path_manager.get_stylesheets_folder_path('Darkmode.qss')).read_text())
         else:
             app.setStyleSheet("""
             QGraphicsView {

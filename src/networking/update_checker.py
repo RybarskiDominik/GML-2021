@@ -1,5 +1,6 @@
-import urllib.parse
+from packaging import version
 import urllib.request
+import urllib.parse
 import logging
 import ctypes
 import json
@@ -28,29 +29,27 @@ class VS_FIXEDFILEINFO(ctypes.Structure):
 def check_app_update_status():
     file_version, product_version = get_file_and_product_version()
     app_version = get_latest_app_version()
-    
+
     try:
         if app_version:
-            app_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', app_version).split()))
-            if len(app_version) == 3:
-                app_version.append(0)
-        file_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', file_version).split()))
-        product_version = list(map(int, re.sub(r'[^A-Za-z0-9]', ' ', product_version).split()))
+            app_version = version.parse(app_version)
+        file_version = version.parse(file_version)
+        product_version = version.parse(product_version)
     except Exception as e:
         logging.exception(e)
-
-    #print(app_version, file_version, product_version, sep='\n')
+        return None
 
     if app_version is None:
         return "Offline"
-    elif app_version is False or not app_version:
-        return None
     elif app_version == file_version or app_version == product_version:
-        return False  # Installed version is the same
+        return False  # Installed version is up to date.
     elif app_version > file_version or app_version > product_version:
-        return False  # Installed version is the same
+        return True  # Installed version is outdated.
+    elif app_version < file_version or app_version < product_version:
+        return False  # Installed version is up to date.
     else:
-        return True  # Installed version is outdated
+        return None  # Error
+
 
 def get_file_and_product_version(exe_path=sys.executable):
     size = ctypes.windll.version.GetFileVersionInfoSizeW(exe_path, None)

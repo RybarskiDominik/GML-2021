@@ -14,8 +14,9 @@ import os
 
 
 class SettingsWindow(QMainWindow):
-    def __init__(self, dark_mode_enabled=None, versja=None):
+    def __init__(self, dark_mode_enabled=None, version=None):
         super(SettingsWindow, self).__init__()
+        self.version = version
         app_update_status = None
         self.settings = QSettings('GML', 'GML Reader')
 
@@ -30,7 +31,7 @@ class SettingsWindow(QMainWindow):
             """)
 
         self.setFixedSize(350, 400)
-        self.setWindowTitle(f'GML Reader wersja: {versja}')
+        self.setWindowTitle(f'GML Reader wersja: {self.version}')
         self.setWindowIcon(QIcon(r'gui\Stylesheets\GML.ico'))
         
         self.config()
@@ -128,20 +129,21 @@ class SettingsWindow(QMainWindow):
 
     def check_update(self):
         app_update_status = None
+        self.version
         try:
             app_update_status = check_app_update_status()
         except Exception as e:
             logging.exception(e)
-        #print(app_update_status)
-        if app_update_status == "Offline":
-            self.button_check_update.setText("Brak Internetu!")
-            self.button_check_update.setStyleSheet('')
+
         if app_update_status == True:  
             self.button_check_update.setText("Dostępna jest aktualizacja.") 
             self.button_check_update.setStyleSheet('background-color: "#975D9F"')    
         if app_update_status == False:
             self.button_check_update.setText("Wersja aktualna.")
             self.button_check_update.setStyleSheet('background-color: "#77C66E"')
+        if app_update_status == "Offline":
+            self.button_check_update.setText("Brak Internetu!")
+            self.button_check_update.setStyleSheet('')
         if app_update_status == None:
             self.button_check_update.setText("Błąd!")
             self.button_check_update.setStyleSheet('background-color: "#ab2c0c"')
@@ -167,10 +169,10 @@ class SettingsWindow(QMainWindow):
 
 if __name__ == '__main__':
     app = QApplication( sys.argv )
-    
+
     settings = QSettings('GML', 'GML Reader')
     dark_mode_enabled = settings.value('DarkMode', False, type=bool)
-    
+
     try:
         if settings.value('DarkMode', True, type=bool):
             app.setStyleSheet(Path('Stylesheets/Darkmode.qss').read_text())        
@@ -181,7 +183,7 @@ if __name__ == '__main__':
                 background: transparent;
             }
             """)
-            
+
     except Exception as e:
             logging.exception(e)
             print(e)
