@@ -49,11 +49,11 @@ log_file_path = path_manager.get_log_file_path()
 gml_file_path = path_manager.get_gml_file_path()
 xlsx_target_path = path_manager.get_xlsx_target_path()
 
-logging.basicConfig(level=logging.INFO, filename=log_file_path, filemode="w", format="%(asctime)s - %(lineno)d - %(levelname)s - %(message)s") #INFO NOTSET
+logging.basicConfig(level=logging.NOTSET, filename=log_file_path, filemode="w", format="%(asctime)s - %(lineno)d - %(levelname)s - %(message)s") #INFO NOTSET
 settings = QSettings('GML', 'GML Reader')
 
 
-versja = "1.7.2"
+versja = "1.7.3"
 
 
 @dataclass
@@ -153,6 +153,8 @@ class MyWindow(QMainWindow):
                     #self.gview.hide()
             except Exception as e:
                 logging.exception(e)
+
+        logging.debug("Initialize completed")
 
     def init_UI(self):
         obiekt = self.settings.value('Tytuł', None)
@@ -556,12 +558,13 @@ class MyWindow(QMainWindow):
                 GlobalInterpreter.prased_gml, GlobalInterpreter.działki_gml = parser.gml_reader(fname[0])
                 E = time.perf_counter()
                 print(f"{E-S:.4}")
+                GlobalInterpreter.status = False
             except Exception as e:
                 logging.exception(e)
                 self.result_output("GML Reader Error!", "#ab2c0c")
                 return
             
-            if GlobalInterpreter.status is None and self.settings.value('UproszczonaMapa', True, type=bool) == True:
+            if GlobalInterpreter.status is False and self.settings.value('UproszczonaMapa', True, type=bool) == True:
                 self.refresh_map_view()
             
             GlobalInterpreter.reset()
@@ -1095,7 +1098,7 @@ class MyWindow(QMainWindow):
         clipboard = QApplication.clipboard()
         clipboard.setText(copied_data)
 
-        print("copy")
+        print("Copy data complete.")
 
     def context_menu(self, pos):
         context_menu = QMenu(self)
@@ -1183,6 +1186,8 @@ if __name__ == '__main__':
         argv_path = sys.argv[1]
 
     dark_mode_enabled = settings.value('DarkMode', False, type=bool)
+
+    logging.debug(path_manager.get_base_path())
 
     try:
         if dark_mode_enabled:

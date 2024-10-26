@@ -27,6 +27,8 @@ import math
 import sys
 import os
 
+logger = logging.getLogger(__name__)
+
 path_manager = PathManager()
 
 if getattr(sys, 'frozen', False):
