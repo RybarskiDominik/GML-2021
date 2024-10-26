@@ -131,7 +131,7 @@ class SettingsWindow(QMainWindow):
         app_update_status = None
         self.version
         try:
-            app_update_status = check_app_update_status()
+            app_update_status = check_app_update_status(self.version)
         except Exception as e:
             logging.exception(e)
 

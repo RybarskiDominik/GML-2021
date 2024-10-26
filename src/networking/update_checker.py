@@ -26,26 +26,27 @@ class VS_FIXEDFILEINFO(ctypes.Structure):
     ]
 
 
-def check_app_update_status():
-    file_version, product_version = get_file_and_product_version()
-    app_version = get_latest_app_version()
+def check_app_update_status(app_manual_version=None):
+    file_version, _ = get_file_and_product_version()
+    latest_online_version  = get_latest_app_version()
+    if not file_version:
+        file_version = app_manual_version
 
     try:
-        if app_version:
-            app_version = version.parse(app_version)
+        if latest_online_version:
+            latest_online_version  = version.parse(latest_online_version )
         file_version = version.parse(file_version)
-        product_version = version.parse(product_version)
     except Exception as e:
         logging.exception(e)
         return None
 
-    if app_version is None:
+    if latest_online_version is None:
         return "Offline"
-    elif app_version == file_version or app_version == product_version:
+    elif latest_online_version == file_version:
         return False  # Installed version is up to date.
-    elif app_version > file_version or app_version > product_version:
+    elif latest_online_version > file_version:
         return True  # Installed version is outdated.
-    elif app_version < file_version or app_version < product_version:
+    elif latest_online_version < file_version:
         return False  # Installed version is up to date.
     else:
         return None  # Error
