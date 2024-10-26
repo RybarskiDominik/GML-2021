@@ -1,27 +1,25 @@
-# [Pobierz GML-2021.](https://github.com/RybarskiDominik/GML-2021/releases/latest)
-Program umożliwia podstawowy odczyt danych osobowych oraz wizualizację danych pozyskanych z pliku GML udostepnionych z PODGiK.
+# GML-2021
 
-Wizualizacja małżeństw:
+[**Pobierz GML-2021**](https://github.com/RybarskiDominik/GML-2021/releases/latest)
 
-Małżeństwa są określane poprzez ich ID oraz kolor jest to spowodowane technicznymi ograniczeniami podczas programowania, chęcią zachowania spójności oraz przejrzystość wizualizacji danych.
+[**Szczegółowa instrukcja programu GML Reader**](https://github.com/RybarskiDominik/GML-2021/blob/main/Instrukcja%20programu%20GML%20Reader.pdf)
 
-![image](https://github.com/RybarskiDominik/GML-2021/assets/127627343/86cc5e40-71e0-4c8f-b796-e42ee0881361)
+Program **GML-2021** umożliwia podstawowy odczyt danych osobowych oraz wizualizację danych z plików GML, pozyskanych z PODGiK.
+## Funkcje
 
-Podpowiedzi:
+### Wizualizacja małżeństw
+- Małżeństwa są identyfikowane za pomocą unikalnego ID (`IDM`) i są wyróżniane indywidualnym kolorem.
+![Wizualizacja Małżeństw](https://github.com/user-attachments/assets/0fde63a4-67ba-406d-b958-71d80ca291a6)
 
-![Podpowiedzi](https://github.com/RybarskiDominik/GML-2021/assets/127627343/ad4d2e98-d5ca-42d9-a957-2e20830e37ba)
+### Strona startowa
+![Strona Startowa](https://github.com/user-attachments/assets/42be7def-7a32-4d4f-a324-9f82de38b040)
 
+### Tryb ciemny (Dark Mode)
+![Tryb Ciemny](https://github.com/user-attachments/assets/dca6b3f2-29ff-4a55-87af-395f37f5ee5e)
 
-Strona startowa:
-![Classic](https://github.com/RybarskiDominik/GML-2021/assets/127627343/42e9822a-4ad5-441f-9861-0f5b017fd187)
-Dark mode:
-![Darkmode](https://github.com/RybarskiDominik/GML-2021/assets/127627343/1382d642-6eca-43e7-a0ad-639dce7f9586)
-
-Wizualizacja GML:
+### Wizualizacja GML
 ![GML 2021 v3](https://github.com/RybarskiDominik/GML-2021/assets/127627343/1fe1df0a-62a4-4cc7-9569-f77f3c89d6ee)
 
-
-
-
-GML w wersji 2015 nie jest wspierany, możliwe błędy przy odczycie oraz niespójność danych.
-Rozporządzenie Ministra Rozwoju, Pracy i Technologii z dnia 27 lipca 2021 r. w sprawie ewidencji gruntów i budynków.
+## Ważne Informacje
+- **GML w wersji 2015** nie jest wspierany; mogą wystąpić błędy oraz niespójność danych przy próbie odczytu tej wersji.
+- Program jest zgodny z **Rozporządzeniem Ministra Rozwoju, Pracy i Technologii** z dnia 27 lipca 2021 r., dotyczącym ewidencji gruntów i budynków.
