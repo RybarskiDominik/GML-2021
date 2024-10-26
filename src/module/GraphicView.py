@@ -22,6 +22,7 @@ import math
 import sys
 import os
 
+logger = logging.getLogger(__name__)
 
 class connect:
     EmitID: str = None
