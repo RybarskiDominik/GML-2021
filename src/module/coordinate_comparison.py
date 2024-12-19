@@ -300,9 +300,19 @@ class ImportWin(QMainWindow):
 
 
 class DropWin(QMainWindow):
-    def __init__(self, win):
+    def __init__(self, win, dark_mode_enabled=None):
         super().__init__()
         self.win = win
+        if dark_mode_enabled:
+            self.setStyleSheet("""
+            QCheckBox {
+                color: #ffffff;
+                }
+            QGroupBox {
+                color: #ffffff;
+                }
+            """)
+
         self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
         self.setWindowTitle("..NR..")
         self.setWindowIcon(QIcon(r'gui\Stylesheets\WSP.ico'))
@@ -601,7 +611,7 @@ class Win_coordinate_comparison(QMainWindow):
         self.table_widget.customContextMenuRequested.connect(self.context_menu)
 
     def remove_text_from_NR(self):
-        self.drop_win= DropWin(self.win)
+        self.drop_win= DropWin(self.win, self.dark_mode_enabled)
         self.drop_win.show()
 
     def import_window(self):

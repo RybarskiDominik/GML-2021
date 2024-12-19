@@ -6,7 +6,8 @@ from pyproj import Transformer
 def open_parcel_in_street_view(xy: QPointF, heading: float=0, EPSG="EPSG:2177"):
     x = xy.x()
     y = abs(xy.y())
-
+    if "::" in EPSG:
+        EPSG = EPSG.replace("::", ":")
     transformer = Transformer.from_crs(EPSG, "EPSG:4326", always_xy=True)
 
     lon, lat = transformer.transform(x, y)

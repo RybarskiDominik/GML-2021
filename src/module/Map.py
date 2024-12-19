@@ -864,100 +864,30 @@ def murek_wizualizacja(scene, path_to_map=None):
     
     color = Qt.black
     width = 0.1
+    buffer_distance = 0.2
 
     geometry = df_ogrodzenia['geometry']
     for geom, line_id in zip(geometry, ids):
         if isinstance(geom, LineString):
-            x, y = geom.coords.xy
-            x = list(x) 
-            y = [-i for i in list(y)]
-            coords = list(zip(x, y))
- 
-            for i in range(len(coords) - 1):
-                x1, y1 = coords[0]
-                x2, y2 = coords[1]
-                delta_x = x2 - x1
-                delta_y = y2 - y1
-                parallel_line_distance = 0.2
-                line_length = (delta_x ** 2 + delta_y ** 2) ** 0.5
-                offset_x = parallel_line_distance * delta_y / line_length
-                offset_y = -parallel_line_distance * delta_x / line_length
-                new_start_point = (x1 - offset_x, y1 - offset_y)
-                new_end_point = (x1 + offset_x, y1 + offset_y)
-                outline_start = QGraphicsLineItem(new_start_point[0], new_start_point[1], new_end_point[0], new_end_point[1])
-                pen_start = QPen(color)
-                pen_start.setWidthF(width)
-                pen_start.setCapStyle(Qt.RoundCap)
-                pen_start.setJoinStyle(Qt.RoundJoin)
-                outline_start.setPen(pen_start)
-
-                scene.addItem(outline_start)
-                data.murki.append(outline_start)
-
-                x1, y1 = coords[-2]
-                x2, y2 = coords[-1]
-                delta_x = x2 - x1
-                delta_y = y2 - y1
-                line_length = (delta_x ** 2 + delta_y ** 2) ** 0.5
-                offset_x = parallel_line_distance * delta_y / line_length
-                offset_y = -parallel_line_distance * delta_x / line_length
-                new_start_point = (x2 - offset_x, y2 - offset_y)
-                new_end_point = (x2 + offset_x, y2 + offset_y)
-                outline_end = QGraphicsLineItem(new_start_point[0], new_start_point[1], new_end_point[0], new_end_point[1])
-                pen_end = QPen(color)
-                pen_end.setWidthF(width)
-                pen_end.setCapStyle(Qt.RoundCap)
-                pen_end.setJoinStyle(Qt.RoundJoin)
-                outline_end.setPen(pen_end)
-
-                scene.addItem(outline_end)
-                data.murki.append(outline_end)
-                
-                x1, y1 = coords[i] 
-                x2, y2 = coords[i + 1]
-
-                line_item = QGraphicsLineItem(x1, y1, x2, y2)
-                pen = QPen(color)
-                pen.setWidthF(width)
-                line_item.setPen(pen)
-                #scene.addItem(line_item)
-
-                delta_x = x2 - x1
-                delta_y = y2 - y1
-                parallel_line_distance = 0.2
-                line_length = (delta_x ** 2 + delta_y ** 2) ** 0.5
-                offset_x = parallel_line_distance * delta_y / line_length
-                offset_y = -parallel_line_distance * delta_x / line_length
-                new_start_point = (x1 + offset_x, y1 + offset_y)
-                new_end_point = (x2 + offset_x, y2 + offset_y)
-                outline = QGraphicsLineItem(new_start_point[0], new_start_point[1], new_end_point[0], new_end_point[1])
-                pen = QPen(color)
-                pen.setWidthF(width)
-                pen.setCapStyle(Qt.RoundCap)
-                pen.setJoinStyle(Qt.RoundJoin)
-                outline.setPen(pen)
-
-                scene.addItem(outline)
-                data.murki.append(outline)
-                
-                x1, y1 = coords[i + 1]
-                x2, y2 = coords[i]
-                delta_x = x2 - x1
-                delta_y = y2 - y1
-                line_length = (delta_x ** 2 + delta_y ** 2) ** 0.5
-                offset_x = parallel_line_distance * delta_y / line_length
-                offset_y = -parallel_line_distance * delta_x / line_length
-                new_start_point = (x1 + offset_x, y1 + offset_y)
-                new_end_point = (x2 + offset_x, y2 + offset_y)
-                outline = QGraphicsLineItem(new_start_point[0], new_start_point[1], new_end_point[0], new_end_point[1])
-                pen = QPen(color)
-                pen.setWidthF(width)
-                pen.setCapStyle(Qt.RoundCap)
-                pen.setJoinStyle(Qt.RoundJoin)
-                outline.setPen(pen)
-                
-                scene.addItem(outline)
-                data.murki.append(outline)
+            buffered_polygon = geom.buffer(buffer_distance, cap_style=2)
+            
+            # Convert the buffered polygon to QPolygonF format
+            polygon_points = [QPointF(x, -y) for x, y in buffered_polygon.exterior.coords]
+            q_polygon = QPolygonF(polygon_points)
+            
+            # Create the QGraphicsPolygonItem with the polygon shape
+            outline = QGraphicsPolygonItem(q_polygon)
+            
+            # Set up the pen for the outline
+            pen = QPen(color)
+            pen.setWidthF(width)
+            pen.setCapStyle(Qt.FlatCap)
+            pen.setJoinStyle(Qt.BevelJoin)
+            outline.setPen(pen)
+            
+            # Add the polygon item to the scene
+            scene.addItem(outline)
+            data.murki.append(outline)
 
 # Tymczasowe rozwiązanie. Sensowniejsza będzie opcja wyboru określonych działek i dalsza analiza w głównym oknie.
 

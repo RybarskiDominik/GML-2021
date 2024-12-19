@@ -1,8 +1,10 @@
 __pycache__
 
 build
+DOCX
 dist
 GML
+OBF
 
 *.gml
 *.exe
@@ -11,6 +13,7 @@ GML
 *.exe
 *.spec
 *.xlsx
+*.docx
 
 Kompilator GML.iss
 Parsed_GML.gml
