@@ -4,6 +4,7 @@ build
 DOCX
 dist
 GML
+OBF
 
 *.gml
 *.exe

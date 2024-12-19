@@ -7,6 +7,11 @@ import json
 import sys
 import re
 
+logger = logging.getLogger(__name__)
+
+class UpdateChecker:
+    pass
+
 
 class VS_FIXEDFILEINFO(ctypes.Structure):
     _fields_ = [
@@ -41,14 +46,19 @@ def check_app_update_status(app_manual_version=None):
         return None
 
     if latest_online_version is None:
+        logging.debug("Offline")
         return "Offline"
     elif latest_online_version == file_version:
+        logging.debug("The installed version is the same as the version available online.")
         return False  # Installed version is up to date.
     elif latest_online_version > file_version:
+        logging.debug("The installed version is outdated.")
         return True  # Installed version is outdated.
     elif latest_online_version < file_version:
+        logging.debug("The installed version is up to date.")
         return False  # Installed version is up to date.
     else:
+        logging.debug("Error: app version check")
         return None  # Error
 
 

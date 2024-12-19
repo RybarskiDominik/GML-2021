@@ -7,6 +7,9 @@ def copy_file(path_to_file, target_path_for_GML):
         shutil.copy(path_to_file, target_path_for_GML)
         print(f"Plik został skopiowany do {target_path_for_GML}.")
         return True
+    except shutil.SameFileError:
+        print("Źródłowy i docelowy plik są takie same. Kopiowanie pominięto.")
+        return True
     except Exception as e:
         logging.exception(e)
         print(f"Wystąpił błąd podczas kopiowania pliku: {str(e)}")

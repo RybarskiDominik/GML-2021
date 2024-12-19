@@ -1,5 +1,8 @@
 from pathlib import Path
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class PathManager:
@@ -12,6 +15,7 @@ class PathManager:
         self.log_file_path = self.base_path / "log.log"
         self.gml_file_path = self.base_path / "GML" / "Parsed_GML.gml"
         self.gml_folder_path = self.base_path / "GML"
+        self.docx_folder_path = self.base_path / "DOCX"
         self.xlsx_target_path = self.base_path / "GML" / "GML.xlsx"
         self.stylesheets_path = self.base_path / 'gui' / 'Stylesheets' / 'images_dark-light'
         self.stylesheets_folder_path = self.base_path / 'gui' / "Stylesheets"
@@ -29,6 +33,9 @@ class PathManager:
     def get_gml_folder_path(self):
         return str(self.gml_folder_path)
 
+    def get_docx_folder_path(self):
+        return str(self.docx_folder_path)
+    
     def get_xlsx_target_path(self):
         return str(self.xlsx_target_path)
 
