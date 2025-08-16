@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 2048">
+	<defs><style>.cls-1{fill:none;stroke:#000;stroke-width:76px;stroke-linecap:round;stroke-linejoin:round;}</style></defs>
+	<title>Data Icon</title>
+	<path class="cls-1" d="M 102,522 V 1888 H 1300 V 1729" />
+	<path class="cls-1" d="M 276,344 V 1710 H 1476 V 138 H 560 Z M 560,138 V 344 H 276 m 1200,112 h 99 L 1685.5946,311.22155 M 1476,674 h 136 l 68,-94 h 108 m -312,340 h 168 m -168,248 h 136 l 68,92 h 108 m -312,124 h 98 l 116.0153,150.9597" />
+	<path class="cls-1" d="m 592,466 h 51.99998 M 834,466 h 94 m 192,0 h 52 M 456,618 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52 M 456,770 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52 M 456,924 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52 m -852,152 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52 m -852,152 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52 m -852,152 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52 m -852,154 h 52 m 186,0 h 94 m 188,0 h 94 m 186,0 h 52" />
+	<circle class="cls-1" cx="1740" cy="240" r="80" />
+	<circle class="cls-1" cx="1868" cy="580" r="80" />
+	<circle class="cls-1" cx="1724" cy="920" r="80" />
+	<circle class="cls-1" cx="1868" cy="1260" r="80" />
+	<circle class="cls-1" cx="1740" cy="1600" r="80" />
+</svg>

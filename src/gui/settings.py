@@ -14,8 +14,8 @@ import os
 
 
 class SettingsWindow(QMainWindow):
-    def __init__(self, dark_mode_enabled=None, version=None):
-        super(SettingsWindow, self).__init__()
+    def __init__(self, parent=None, dark_mode_enabled=None, version=None):
+        super(SettingsWindow, self).__init__(parent)
         self.version = version
         app_update_status = None
         self.settings = QSettings('GML', 'GML Reader')
@@ -38,6 +38,8 @@ class SettingsWindow(QMainWindow):
         
         self.init_UI()
         
+        self.check_update()
+
     def config(self):
         
         save_value = []
@@ -67,9 +69,33 @@ class SettingsWindow(QMainWindow):
         self.button_check_update.setGeometry(200, 330, 145, 28)
         self.button_check_update.clicked.connect(self.check_update)
 
+
+        self.last_gml = QCheckBox('Wczytaj ostatni GML', self)
+        if self.settings.value('LastGML', True, type=bool) == True:
+            self.last_gml.setChecked(True)
+        self.last_gml.setToolTip("Wyłącz wczytywanie ostatniego GML na starcie programu.")
+
+        self.strip_gml = QCheckBox('Skróć id w GML', self)
+        if self.settings.value('StripID', False, type=bool) == True:
+            self.strip_gml.setChecked(True)
+        self.strip_gml.setToolTip("Skraca id w GML.")
+
+        self.short_owner_addr = QCheckBox('Łącz (właściciele/adresu)', self)
+        if self.settings.value('ShortOwnerAddr', False, type=bool) == True:
+            self.short_owner_addr.setChecked(True)
+        self.short_owner_addr.setToolTip("Łączy kolumny właściciela i adresu")
+
+        self.add_obreb_coll = QCheckBox('Dodaj columnę obrębu', self)
+        if self.settings.value('AddObreb', False, type=bool) == True:
+            self.add_obreb_coll.setChecked(True)
+        self.add_obreb_coll.setToolTip("Dodaje columnę obrębu.")
+
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignTop)
-        #layout.addWidget()
+        layout.addWidget(self.last_gml)
+        layout.addWidget(self.strip_gml)
+        layout.addWidget(self.short_owner_addr)
+        layout.addWidget(self.add_obreb_coll)
         group_main.setLayout(layout)
 
 
@@ -80,16 +106,18 @@ class SettingsWindow(QMainWindow):
         self.full_scene = QCheckBox('FullScene', self)
         if self.settings.value('FullScene', True, type=bool) == True:
             self.full_scene.setChecked(True)
-
+        
+        """
         self.uproszczona_mapa = QCheckBox('Uproszczona mapa?', self)
         if self.settings.value('UproszczonaMapa', True, type=bool) == True:
             self.uproszczona_mapa.setChecked(True)
+        """
 
         layout = QVBoxLayout()
         layout.setAlignment(Qt.AlignTop)
         layout.addWidget(self.dark_mode)
         layout.addWidget(self.full_scene)
-        layout.addWidget(self.uproszczona_mapa)
+        #layout.addWidget(self.uproszczona_mapa)
 
         group_app.setLayout(layout)
 
@@ -127,9 +155,13 @@ class SettingsWindow(QMainWindow):
         self.button_Reset.setText("Anuluj")
         self.button_Reset.clicked.connect(self.anuluj)
 
-    def check_update(self):
+
+    def check_update(self, version=None):
+        if version:
+            self.version = version
+
         app_update_status = None
-        self.version
+
         try:
             app_update_status = check_app_update_status(self.version)
         except Exception as e:
@@ -137,7 +169,7 @@ class SettingsWindow(QMainWindow):
 
         if app_update_status == True:  
             self.button_check_update.setText("Dostępna jest aktualizacja.") 
-            self.button_check_update.setStyleSheet('background-color: "#975D9F"')    
+            self.button_check_update.setStyleSheet('background-color: "#975D9F"')  
         if app_update_status == False:
             self.button_check_update.setText("Wersja aktualna.")
             self.button_check_update.setStyleSheet('background-color: "#77C66E"')
@@ -148,16 +180,31 @@ class SettingsWindow(QMainWindow):
             self.button_check_update.setText("Błąd!")
             self.button_check_update.setStyleSheet('background-color: "#ab2c0c"')
 
+    def simple_check_update(self, version=None):
+        app_update_status = None
+        
+        try:
+            app_update_status = check_app_update_status(version)
+        except Exception as e:
+            logging.exception(e)
+
+        if app_update_status == True:  
+            return app_update_status  
+
     def reset(self):
         self.settings.clear()
         self.close()
 
     def zapisz(self):
+        self.settings.setValue("LastGML", self.last_gml.isChecked())
+        self.settings.setValue("StripID", self.strip_gml.isChecked())
+        self.settings.setValue("ShortOwnerAddr", self.short_owner_addr.isChecked())
+        self.settings.setValue("AddObreb", self.add_obreb_coll.isChecked())
         self.settings.setValue("DarkMode", self.dark_mode.isChecked())
         self.settings.setValue("MapStaysOnTopHint", self.map_flag.isChecked())
         self.settings.setValue("FullID", self.points_id.isChecked())
         self.settings.setValue("FullScene", self.full_scene.isChecked())
-        self.settings.setValue("UproszczonaMapa", self.uproszczona_mapa.isChecked())
+        #self.settings.setValue("UproszczonaMapa", self.uproszczona_mapa.isChecked())
         #settings.setValue("windowSize", self.size())
         self.close()
 
@@ -188,6 +235,6 @@ if __name__ == '__main__':
             logging.exception(e)
             print(e)
 
-    ConfigWindow = SettingsWindow(dark_mode_enabled)
+    ConfigWindow = SettingsWindow(dark_mode_enabled=dark_mode_enabled)
     ConfigWindow.show()
     sys.exit(app.exec())

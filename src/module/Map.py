@@ -223,8 +223,8 @@ class EmitMapW(QMainWindow):
 
 class WindowMap(QMainWindow):
     item_signal = Signal(str)
-    def __init__(self, path_to_map=None, parsed_gml=None, target_xlsx=None): 
-        super(WindowMap, self).__init__()
+    def __init__(self, parent=None, path_to_map=None, parsed_gml=None, target_xlsx=None): 
+        super(WindowMap, self).__init__(parent)
         self.setWindowTitle("GML Map")
         self.setWindowIcon(QIcon(r'gui\Stylesheets\GML.ico'))
         
@@ -935,43 +935,4 @@ def overlap_polygons_auto(df_overlap_polygons):
 
 
 if __name__ == '__main__':
-
-    logging.basicConfig(level=logging.NOTSET, filename="log.log", filemode="w", format="%(asctime)s - %(lineno)d - %(levelname)s - %(message)s") #INFO
-
-    app = QApplication( sys.argv )
-
-    def path():
-        path = QFileDialog.getOpenFileName(None, 'open file', os.path.expanduser("~/Desktop"), 'GML File(*.gml)')
-        return path[0]
-
-    path_to_map = r""
-    
-    if not path_to_map:
-        path_to_map = path()
-        if not path_to_map:
-            print("Możesz Wprowadzić path do pliku źrudłowego ręcznie, variable ---> \"path_to_map\".")
-            sys.exit()
-    
-    settings = QSettings('GML', 'GML Reader')
-    if settings.value('DarkMode', True, type=bool):
-        darkmode = 1
-    else:
-        darkmode = 0
-
-    try:
-        if darkmode != 1:
-            app.setStyleSheet("""
-            QGraphicsView {
-                border: none;
-                background: transparent;
-            }
-            """)
-        else:
-            app.setStyleSheet(Path('gui/Stylesheets/darkmode.qss').read_text())
-    except Exception as e:
-            logging.exception(e)
-            print(e)
-
-    MapWindow = WindowMap(path_to_map)
-    MapWindow.show()
-    sys.exit(app.exec())
+    pass

@@ -4,14 +4,14 @@ from PySide6.QtWidgets import (QApplication, QGraphicsLineItem, QMainWindow,
                                QApplication, QMainWindow, QGraphicsView, QGraphicsScene,
                                QGraphicsPolygonItem, QGraphicsTextItem, QSpacerItem,
                                QProgressBar, QSplashScreen, QSizePolicy, QPushButton,
-                               QGraphicsPixmapItem, QMenu, QSplitter, QApplication,
+                               QGraphicsPixmapItem, QMenu, QSplitter, QStatusBar,
                                QMainWindow, QWidget, QTextEdit, QPushButton, QGridLayout,
-                               QSplitter, QFrame, QVBoxLayout, QHBoxLayout)
+                               QSplitter, QFrame, QVBoxLayout, QHBoxLayout, QLabel)
     
 from PySide6.QtGui import (QFont, QPolygonF, QPolygonF, QPainter, QFont, QColor, QTransform,
                            QBrush, QPen, QIcon, QPainterPath, QPixmap, QPalette, QCursor,
                            QKeySequence, QShortcut)
-from PySide6.QtCore import Signal, QSettings, Qt, QRectF, QThread, QByteArray
+from PySide6.QtCore import Signal, QSettings, Qt, QRectF, QThread, QByteArray, Qt, QTimer, Slot
 from PySide6 import QtCore, QtWidgets, QtGui
 from dataclasses import dataclass
 from os.path import exists
@@ -25,15 +25,10 @@ import time
 import sys
 import os
 
-from obf import parser  # gml_reader return pd.DataFrame -> ['Działka', 'KW', 'Pole. pow.', 'Własność', 'udziały', 'Właściciele', 'Nazwisko', 'Drugie Imię', 'Imie ojca', 'Imie matki', 'Pesel', 'Adres', 'Adres Korespodencyjny', 'IDM', 'Status', 'JGR', 'Grupa Rejestrowa']
-from obf.lista_dzialek import lista_dzialek_update  # return pd.DataFrame -> ['Działka']
+from processing.punkty_poligon import punkty_w_dzialkach  # return pd.DataFrame -> ['Działka', 'ID']
+from processing.punkty import punkt_graniczny  # return pd.DataFrame -> ['ID', 'NR', 'X', 'Y', 'SPD', 'ISD','STB']
 
-from obf.dzialki import gml_działki  # return pd.DataFrame -> ['Działka', 'KW', 'Pole. pow.', 'Dokładność do:', 'Pole']
-from obf.uzytki import gml_użytek  # return pd.DataFrame -> ['Działka', 'KW', 'Pole. pow.', 'Użytek', 'Pow. Użytku']
-from obf.budynki import kartoteki  # return pd.DataFrame -> ['Działka', 'KW', 'Budynek', 'KŚT', 'Pole. pow.', 'Nad', 'Pod', 'Adres']
-
-from obf.punkty_poligon import punkty_w_dzialkach  # return pd.DataFrame -> ['Działka', 'ID']
-from obf.punkty import punkt_graniczny  # return pd.DataFrame -> ['ID', 'NR', 'X', 'Y', 'SPD', 'ISD','STB']
+from function.log_window import LogWindow
 
 from function.copy import copy_file # Copy (*.gml) file to GML folder.
 
@@ -45,47 +40,32 @@ from module.coordinate_comparison import Win_coordinate_comparison
 
 from model.MapGraphicView import QDMGraphicsView, EmitMap, MapHandler, data
 from model.GraphicView_list import DraggableItemFrame
-from model.GML_processing_by_ET import GMLParser
+from model.GML_processing_by_ET_Main import GMLParser
 
 from module.DOCX import DOCX
+from module.GML_Handler import GML_Handler
+from module.KW_Handler import KW_Handler
+from module.Raster_handler import Raster_handler
 
-from model.path import PathManager
-path_manager = PathManager()
+from function.FileMenager import FileManager
 
-if not path_manager.gml_folder_path.exists():
-    try:
-        path_manager.gml_folder_path.mkdir()  # Utwórz folder GML
-        print(f"Utworzono folder: {path_manager.gml_folder_path}")
-    except Exception as e:
-        logging.exception(e)
 
-if not path_manager.docx_folder_path.exists():
-    try:
-        path_manager.docx_folder_path.mkdir()  # Utwórz folder GML
-        print(f"Utworzono folder: {path_manager.docx_folder_path}")
+file_management = FileManager()
+#file_management.reset_docx_path()  # Reset docx path to default.
+#file_management.reset_workspace_path()  # Reset workspace to default path.
+#file_management.print_info()
+#file_management.check_workspace_structure()
 
-        subfolders = ['Podział', 'Wznowienie-Wyznaczenie-Ustalenie']
-        
-        try:
-            for subfolder in subfolders:  # Tworzenie podfolderów
-                subfolder_path = path_manager.docx_folder_path / subfolder
-                subfolder_path.mkdir()
-                print(f"Utworzono podfolder: {subfolder_path}")
-        except Exception as e:
-            logging.exception(e)
+gml_file_path = file_management.gml_file_path
+data_base_file_path = file_management.data_base_file_path
+xlsx_target_path = file_management.xlsx_target_path
 
-    except Exception as e:
-        logging.exception(e)
 
-log_file_path = path_manager.get_log_file_path()
-gml_file_path = path_manager.get_gml_file_path()
-xlsx_target_path = path_manager.get_xlsx_target_path()
-
-logging.basicConfig(level=logging.NOTSET, filename=log_file_path, filemode="w", format="%(asctime)s - %(lineno)d - %(levelname)s - %(message)s") #INFO NOTSET
+logging.basicConfig(level=logging.NOTSET, filename=file_management.log_file_path, filemode="w", format="%(asctime)s - %(lineno)d - %(levelname)s - %(message)s") #INFO NOTSET
 settings = QSettings('GML', 'GML Reader')
 
 
-versja = "1.9.0"
+version = "2.0.0"
 
 
 @dataclass
@@ -96,160 +76,335 @@ class GlobalInterpreter:
     path: str = gml_file_path # Patch do pliku *.GML
 
     # Dane w pliku GML
-    uzytki_gml = pd.DataFrame()
-    działki_gml = pd.DataFrame()
-    prased_gml = pd.DataFrame()
-    budynki_gml = pd.DataFrame()
+    prased_gml = pd.DataFrame() # old
 
-    # Klasyfikacja małżeństw kolorami
-    color_dict = {}
+    color_dict = {}  # Klasyfikacja małżeństw kolorami
 
-    # Check if GML is impoted. >>> False - GML nie wczytany czyli Offline bez mapy ||| True - GML wczytany ||| None - Tryb Mapa + Offline
-    status: bool = False  
+    status: bool = False  # Check if the data is current. >>> False - Nowy GML nie wczytany ||| True - Nowy GML wczytany ||| None - Offline GML czeka na wczytanie.
 
-    # Status offline GML. >>> None - Offline || True - GML wczytany || False - GML nie wczytany
-    status_osoby: bool = None
-    status_budynki: bool = None
-    status_działki: bool = None
-    status_użytki: bool = None
-
-    lastwindow: int = None # Ostatnie otwarte okno | GML DZIALKI UZYTKI
+    lastwindow: int = None  # Ostatnie otwarte okno | GML DZIALKI UZYTKI PUNKTY
 
     clean: bool = False
     table: bool = False
 
-    @classmethod
-    def reset(cls):
-        GlobalInterpreter.status_osoby: bool = None
-        GlobalInterpreter.status_budynki: bool = None
-        GlobalInterpreter.status_działki: bool = None
-        GlobalInterpreter.status_użytki: bool = None
-
 
 class MyWindow(QMainWindow):
     item_signal = Signal(str)
+    kw_signal = Signal(str)
     def __init__(self, argv_path=None):
-        super(MyWindow,self).__init__()
-
-        self.map_signal = EmitMap()
-        self.map_signal.item_signal.connect(self.receive_item)
-
-        self.settings = settings
-
+        super().__init__()  # super(MyWindow, self).__init__()
         self.setWindowIcon(QIcon(r'gui\Stylesheets\GML.ico'))
         self.setMinimumSize(1334, 430)
+        self.setAcceptDrops(True)
+      
+        self.settings = settings
+        self.log_window = LogWindow(self)
+
+        self.gml = GMLParser()  # Inicjalizowanie parsowania GML, dane są zapisywane i odczytywane z self.gml.
         
+        # Full screen mode.
         if self.settings.value('FullScene', True, type=bool) == True:
             self.setWindowState(Qt.WindowMaximized)
-
+        
+        # Shortcut: Ctrl+C
         shortcut = QShortcut(QKeySequence(Qt.CTRL | Qt.Key_C), self)
         shortcut.activated.connect(self.copy_to_clipboard)
         
-
-        self.init_UI()
-        self.init_FRAME()
+        # Initialize UI
+        self.init_ui()
+        self.init_frames()
+        self.init_function_btn()
 
         self.init_widget()
         self.init_MainButton()
 
+        self.init_status_bar()
+
+        # Load last GML on start if option is enabled
+        if data_base_file_path.exists() and self.settings.value('LastGML', True, type=bool) == True:
+            self.import_dataframe_on_start()  # Restore data saved in GML_DataBase.pkl file.
+            self.last_window()
+        else:  # Initializing the default table.
+            self.GMLTable()
+
+        try:  # if self.settings.value('UproszczonaMapa', True, type=bool) == True:
+            self.graphic_map_view()
+            self.init_map_button()
+            self.setMinimumSize(1334, 632)
+        except Exception as e:
+            logging.exception(e)
+            print(e)
 
         if argv_path and isinstance(argv_path, str) and argv_path.endswith(".gml"):
-            var = copy_file(argv_path, gml_file_path)
-            if not var:
-                return
-            self.update_GML()
-
-        if self.settings.value('UproszczonaMapa', True, type=bool) == True:
-            try:
-                self.graphic_map_view()
-                self.init_map_button()
-                self.setMinimumSize(1334, 632)
-            except Exception as e:
-                logging.exception(e)
-        logging.debug("Initialize completed")
+            result = copy_file(argv_path, gml_file_path)
+            if result:
+                self.import_GML()
         
         self.restore_splitter_state()
+        self.signal_and_slot_connections()
 
-    def init_UI(self):
-        # GUI QWidget
-        self.centralwidget = QWidget(self)
-        self.setCentralWidget(self.centralwidget)
+        logging.debug(file_management.base_path)
+        logging.debug("Initialize MAIN APP completed.")
 
-        self.gridLayout = QGridLayout(self.centralwidget)
-        self.gridLayout.setContentsMargins(0, 0, 0, 0)
-        self.gridLayout.setVerticalSpacing(0)
+    # Signal and slot.
+    def signal_and_slot_connections(self):
+        self.map_signal = EmitMap()
+        self.map_signal.item_signal.connect(self.receive_item)
 
+        self.r_handler.update_statusbar.connect(self.update_statusBar)
+        self.r_handler.update_statusbar_timeout.connect(self.clear_status)
+
+        # Połączenie sygnałów i slotów
+        self.gml_handler.turn_on_polygon_selection_signal.connect(self.map_handler.turn_on_polygon_selection_slot)
+        self.gml_handler.find_polygons_signal.connect(self.map_handler.find_polygons_slot)
+        self.gml_handler.find_overlap_polygons_signal.connect(self.map_handler.find_overlap_polygons_slot)
+        
+        # Obsługa wyników gml
+        self.map_handler.gml_handler = self.gml_handler  # Przekazanie instancji GML_Handler do MapHandler
+        self.gml_handler.polygons_found.connect(self.gml_handler.handle_polygons_found)
+        self.gml_handler.overlap_polygons_found.connect(self.gml_handler.handle_overlap_polygons_found)
+
+        self.docx_gui.table_model.send_dict.connect(self.gml_handler.receve_table_content)
+
+        self.r_handler.raster_signal.connect(self.map_handler.add_tiff)
+
+        self.r_handler.search_in_map.connect(self.activate_position_selection)
+        # Połączenie sygnału wyboru punktu z funkcją obsługi w Raster_handler
+        self.gview.position_clicked.connect(self.r_handler.get_raster_from_WMS)
+
+    def activate_position_selection(self):
+        self.gview.selecting_position = True
+
+    # Init function frame.
+    def init_ui(self):
+        # Central Widget
+        self.central_widget = QWidget(self)
+        self.setCentralWidget(self.central_widget)
+
+        # Main Layout
+        self.main_layout = QGridLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setVerticalSpacing(0)
+
+        # Button Widget and Layout
         self.button_widget = QWidget(self)
         self.button_layout = QHBoxLayout(self.button_widget)
         self.button_layout.setContentsMargins(0, 0, 0, 0)
         self.button_layout.setSpacing(0)
+        self.main_layout.addWidget(self.button_widget, 0, 0, 1, 1)
 
-        self.gridLayout.addWidget(self.button_widget, 0, 0, 1, 1)
-
+        # Table Widget and Layout
         self.table_widget = QWidget(self)
         self.table_layout = QVBoxLayout(self.table_widget)
         self.table_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Map Widget and Layout
+        self.map_widget = QWidget(self)
+        self.map_layout = QGridLayout(self.map_widget)
+        self.map_layout.setContentsMargins(0, 0, 0, 0)
+        self.map_layout.setSpacing(0)
+
+        # Function Widget and Layout
         self.function_widget = QWidget(self)
         self.function_layout = QVBoxLayout(self.function_widget)
         self.function_layout.setContentsMargins(0, 0, 0, 0)
+        self.function_layout.setSpacing(0)
 
-        self.map_widget = QWidget(self)
-        self.map_layout = QVBoxLayout(self.map_widget)
-        self.map_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.splitter = QSplitter(Qt.Vertical)
-        self.splitter.splitterMoved.connect(self.onSplitterMoved)
-        self.splitter.setHandleWidth(5)
-        self.splitter.setStyleSheet("""
+        # Vertical Splitter
+        self.vertical_splitter = QSplitter(Qt.Vertical)
+        self.vertical_splitter.splitterMoved.connect(self.onSplitterMoved)
+        self.vertical_splitter.setHandleWidth(5)
+        self.vertical_splitter.setStyleSheet("""
                                     QSplitter::handle {
                                         background-color: #9b59b6;
                                     }
-
-                                    QSplitter::handle:horizontal {
-                                        background-color: #9b59b6;
-                                    }
-
-                                    QSplitter::handle:vertical {
-                                        background-color: #9b59b6;
-                                    }
                                     """)
+        self.vertical_splitter.addWidget(self.table_widget)
 
-        self.splitter.addWidget(self.table_widget)
-
+        # Horizontal Splitter
         self.horizontal_splitter = QSplitter(Qt.Horizontal)
         self.horizontal_splitter.splitterMoved.connect(self.onSplitterMoved)
         self.horizontal_splitter.setHandleWidth(5)
         self.horizontal_splitter.addWidget(self.function_widget)
         self.horizontal_splitter.addWidget(self.map_widget)
 
-        self.splitter.addWidget(self.horizontal_splitter)
+        # Add Horizontal Splitter to Vertical Splitter
+        self.vertical_splitter.addWidget(self.horizontal_splitter)
 
-        self.gridLayout.addWidget(self.splitter, 1, 0, 1, 1)
+        # Add Splitter to Main Layout
+        self.main_layout.addWidget(self.vertical_splitter, 1, 0, 1, 1)
 
-    def init_FRAME(self):
-        # GUI QFrame
+        self.button_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.main_layout.setRowStretch(0, 0)
+        self.main_layout.setRowStretch(1, 1)
+
+    def init_frames(self):
+        # Button Frame
         self.button_frame = QFrame(self)
         self.button_frame.setFixedHeight(30)
-        self.table_frame = QFrame(self)
-        self.function_frame = QFrame(self)
-        self.map_frame = QFrame(self)
-
         self.button_frame_layout = QHBoxLayout(self.button_frame)
         self.button_frame_layout.setContentsMargins(0, 0, 0, 0)
         self.button_frame_layout.setSpacing(0)
+
+        # Table Frame
+        self.table_frame = QFrame(self)
         self.table_frame_layout = QVBoxLayout(self.table_frame)
         self.table_frame_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Button function Frame
+        self.button_function_frame = QFrame(self)
+        self.button_function_frame.setFixedHeight(28)
+        self.button_function_frame.setStyleSheet("QFrame { border: none; border-bottom: 1px solid yellow; }")
+        self.function_button_layout = QHBoxLayout(self.button_function_frame)
+        self.function_button_layout.setContentsMargins(2, 0, 2, 0)
+        self.function_button_layout.setSpacing(0)
+
+        # Function Frame
+        self.function_frame = QFrame(self)
+        self.function_win_layout = QVBoxLayout(self.function_frame)
+        self.function_win_layout.setContentsMargins(0, 0, 0, 0)
+        #self.function_win_layout.setSpacing(0)
+        
+        # Embed DOCX GUI    
+        self.docx_gui = DOCX()
+        self.docx_gui.setVisible(False)
+        self.function_win_layout.addWidget(self.docx_gui)
+
+        self.coord_gui = Win_coordinate_comparison()
+        self.coord_gui.setVisible(False)
+        self.function_win_layout.addWidget(self.coord_gui)
+
+        self.gml_handler = GML_Handler(self.gml.df_GML_personal_data, self.docx_gui.dict)
+        self.gml_handler.setVisible(False)
+        self.function_win_layout.addWidget(self.gml_handler)
+
+        self.kw_handler = KW_Handler()
+        self.kw_signal.connect(self.kw_handler.search_kw)
+        #self.kw_handler.setVisible(False)
+        self.function_win_layout.addWidget(self.kw_handler)
+
+        self.r_handler = Raster_handler()
+        self.r_handler.setVisible(False)
+        self.function_win_layout.addWidget(self.r_handler)
+
+        # Map Frame
+        #self.map_frame = QFrame(self)
+        #self.map_layout.addWidget(self.map_frame)
+
+        # Add Frames to Layouts
         self.button_layout.addWidget(self.button_frame)
         self.table_layout.addWidget(self.table_frame)
+        self.function_layout.addWidget(self.button_function_frame)
         self.function_layout.addWidget(self.function_frame)
-        self.map_layout.addWidget(self.map_frame)
+
+    def init_function_btn(self):
+        self.btn_asystent = QtWidgets.QPushButton("Asystent operatu", self)
+        self.btn_asystent.setFixedWidth(100)
+        self.btn_asystent.setFixedHeight(26)
+        self.btn_asystent.clicked.connect(lambda :self.hide_function_widget(self.btn_asystent, self.docx_gui))  # Podłącz metodę toggle_docx_gui
+        self.btn_asystent.setToolTip('<p>Asystent operatu, podmienia tagi w pliku *.DOCX </p>'
+                                      'Następnie eksportuje poprawione dokumenty do wybranej lokalizacji.</p>')
+        
+        self.btn_por_wsp = QtWidgets.QPushButton("coord_gui", self)
+        self.btn_por_wsp.setText("Por.")
+        if dark_mode_enabled:
+            self.btn_por_wsp.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Exchange-light")))
+        else:
+            self.btn_por_wsp.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Exchange-dark")))
+        self.btn_por_wsp.setToolTip('Moduł umożliwiający porównanie współrzędnych.')
+        self.btn_por_wsp.setIconSize(QtCore.QSize(24, 24))
+        self.btn_por_wsp.setFixedWidth(70)
+        self.btn_por_wsp.setFixedHeight(26)
+        self.btn_por_wsp.clicked.connect(lambda :self.hide_function_widget(self.btn_por_wsp, self.coord_gui))  # Podłącz metodę toggle_docx_gui
+
+        self.btn_r = QtWidgets.QPushButton("Rastry", self)  # Handler
+        self.btn_r.setFixedWidth(90)
+        self.btn_r.setFixedHeight(26)
+        self.btn_r.clicked.connect(lambda :self.hide_function_widget(self.btn_r, self.r_handler))
+
+        self.btn_kw = QtWidgets.QPushButton("KW Menedżer", self)  # Handler
+        self.btn_kw.setFixedWidth(90)
+        self.btn_kw.setFixedHeight(26)
+        self.btn_kw.clicked.connect(lambda :self.hide_function_widget(self.btn_kw, self.kw_handler))
+
+        self.btn_gml = QtWidgets.QPushButton("GML Menedżer", self)  # Handler
+        self.set_botton_border(self.btn_gml)
+        self.btn_gml.setFixedWidth(90)
+        self.btn_gml.setFixedHeight(26)
+        self.btn_gml.clicked.connect(lambda :self.hide_function_widget(self.btn_gml, self.gml_handler))
+
+        self.set_button_styles(self.btn_asystent, self.btn_por_wsp, self.btn_gml, self.btn_kw, self.btn_r)
+        self.set_botton_border(self.btn_kw)
+
+        self.function_button_layout.addWidget(self.btn_asystent)
+        self.function_button_layout.addWidget(self.btn_por_wsp)
+        self.function_button_layout.addStretch(1)
+        self.function_button_layout.addWidget(self.btn_r)
+        self.function_button_layout.addWidget(self.btn_kw)
+        self.function_button_layout.addSpacerItem(QSpacerItem(25, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        self.function_button_layout.addWidget(self.btn_gml)
 
     def toggle_frame(self, frame):
         frame.setVisible(not frame.isVisible())
 
+    # Status bar.
+    def init_status_bar(self):
+        self.statusbar = QStatusBar()
+        self.setStatusBar(self.statusbar)
 
+        # Tworzenie centralnego widgetu w statusbarze
+        status_widget = QWidget()
+        status_widget.setMaximumHeight(20)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)  # Usunięcie marginesów
+        layout.setSpacing(0)
+
+        self.btn_log = QtWidgets.QPushButton("", self)
+        self.btn_log.setFixedWidth(20)
+        self.btn_log.setFixedHeight(20)
+        if dark_mode_enabled:
+            self.btn_log.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Data-light")))
+        else:
+            self.btn_log.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Data-dark")))
+        self.btn_log.setIconSize(QtCore.QSize(20, 20))
+        self.btn_log.clicked.connect(self.log_window.show)
+
+        # Tworzenie etykiety na wiadomość
+        self.status_label = QLabel()
+        self.status_label.setStyleSheet("font-size: 14px;")
+
+        if dark_mode_enabled:
+            self.status_label.setStyleSheet("color: white; font-size: 14px;")
+
+        layout.addWidget(self.btn_log)
+        layout.addStretch()  # Rozciąganie przed etykietą
+        layout.addWidget(self.status_label)
+        layout.addStretch()  # Rozciąganie za etykietą
+
+        status_widget.setLayout(layout)
+        self.statusbar.addWidget(status_widget, 1)  # Dodanie widgetu do statusbara
+
+
+        update_available = False
+        if SettingsWindow.simple_check_update(version):
+            update_available = True
+            print("Dostęona jest aktualizacja")
+
+        if update_available:
+            self.update_statusBar("🚀 Dostępna jest nowa aktualizacja.")
+            QTimer.singleShot(10000, self.clear_status)
+
+    @Slot(str)
+    def update_statusBar(self, message: str, duration=None):
+        """Aktualizuje statusbar z nową wiadomością."""
+        #self.status_label.setStyleSheet(f"font-size: 14px;")
+        self.status_label.setText(message)
+
+    def clear_status(self):
+        """Czyści statusbar po opuszczeniu myszy."""
+        self.status_label.setText("")
+
+    # Win events.
     def resizeEvent(self, event):
         super().resizeEvent(event)
         available_width = self.width()
@@ -262,76 +417,71 @@ class MyWindow(QMainWindow):
             self.btn_donate.setVisible(True)
             self.btn_git.setVisible(True)
 
-        if self.settings.value('UproszczonaMapa', True, type=bool) == True:
-            try:
-                self.adjustGview()
-            except Exception as e:
-                logging.exception(e)
-                print(e)
+        #if self.settings.value('UproszczonaMapa', True, type=bool) == True:
+        try:
+            self.adjustGview()
+        except Exception as e:
+            logging.exception(e)
+            print(e)
 
     def onSplitterMoved(self, pos, index):
         #print(self, pos, index)
-        if self.settings.value('UproszczonaMapa', True, type=bool) == True:
-            try:
-                self.adjustGview()
-            except Exception as e:
-                logging.exception(e)
-                print(e)
+        #if self.settings.value('UproszczonaMapa', True, type=bool) == True:
+        try:
+            self.adjustGview()
+        except Exception as e:
+            logging.exception(e)
+            print(e)
 
     def adjustGview(self):
-        self.gview.setGeometry(self.map_frame.geometry())
-        self.browse_in_geoportal.setGeometry(self.map_frame.width() - 162, 20, 140, 28)
-        self.browse_in_street_view.setGeometry(self.map_frame.width() - 162, 50, 140, 28)
+        #self.gview.setGeometry(self.map_frame.geometry())
+        #print(self.map_widget.width(), self.map_widget.height())
+        self.browse_in_geoportal.setGeometry(self.map_widget.width() - 162, 20, 140, 28)
+        self.browse_in_street_view.setGeometry(self.map_widget.width() - 162, 50, 140, 28)
 
-    def closeEvent(self, event):
+    def closeEvent(self, event):    # Zdarzenie zamknięcia okna
         self.save_splitter_state()  # Zapisz stan splitera przed zamknięciem aplikacji
         super().closeEvent(event)
 
-        try:
-            self.window.close()
-        except AttributeError:
-            return
-        
-    def save_splitter_state(self):
-        # Zapisz stan splitera w ustawieniach
-        self.settings.setValue("verticalSplitterState", self.splitter.saveState())
+    # Splitter.
+    def save_splitter_state(self):  # Zapisz stan splitera w ustawieniach
+        self.settings.setValue("verticalSplitterState", self.vertical_splitter.saveState())
         self.settings.setValue("horizontalSplitterState", self.horizontal_splitter.saveState())
 
     def restore_splitter_state(self):  # Przywróć stan splitera z ustawień
         vertical_state = self.settings.value("verticalSplitterState")
         horizontal_state = self.settings.value("horizontalSplitterState")
         if vertical_state is None and horizontal_state is None:
-            self.splitter.setSizes([self.height() // 3, self.width() // 2])
+            self.vertical_splitter.setSizes([self.height() // 3, self.width() // 2])
 
         if vertical_state:
-            self.splitter.restoreState(vertical_state)
+            self.vertical_splitter.restoreState(vertical_state)
         if horizontal_state:
             self.horizontal_splitter.restoreState(horizontal_state)
 
-
+    # Init main button frame.
     def init_MainButton(self):
         obiekt = self.settings.value('Tytuł', None)
         if obiekt:
             self.setWindowTitle(obiekt)
         else:
             self.setWindowTitle("GML Reader")
-        self.setAcceptDrops(True)
-        fname = []
+
         font = QFont()
-        font.setPointSize(8)  # Ustaw rozmiar czcionki na 8
+        font.setPointSize(8)
 
         self.btn_import = QtWidgets.QPushButton(self)
         self.btn_import.setText("Import GML")
         self.btn_import.setFixedWidth(70)
         self.btn_import.setFixedHeight(28)
-        self.btn_import.clicked.connect(self.import_GML)
+        self.btn_import.clicked.connect(self.import_from_path)
         self.btn_import.setToolTip("Wczytaj GML")
 
         self.btn_export = QtWidgets.QToolButton(self)
         if dark_mode_enabled:
-            self.btn_export.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Strzałka-export-light")))
+            self.btn_export.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Strzałka-export-light")))
         else:
-            self.btn_export.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Strzałka-export-dark")))
+            self.btn_export.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Strzałka-export-dark")))
         self.btn_export.setIconSize(QtCore.QSize(30, 30))
         self.btn_export.setFixedWidth(28)
         self.btn_export.setFixedHeight(28)
@@ -339,27 +489,26 @@ class MyWindow(QMainWindow):
         self.btn_export.setToolTip("Export zawartości tabeli do Excela.")
 
         self.toggle_button = ToggleButton(parent=self)
-        #self.toggle_button.setFixedWidth(5)
-        #self.toggle_button.setFixedHeight(2)
-        self.toggle_button.clicked.connect(self.update_GML)
-        self.toggle_button.setToolTip('<p>Funkcja <b>"drag and drop"</b> dla plików GML</p>'
+        self.toggle_button.setFixedWidth(50)
+        self.toggle_button.setFixedHeight(30)
+        self.toggle_button.clicked.connect(self.import_GML)
+        self.toggle_button.setToolTip('<p>Funkcja importująca dla plików GML wrzuconych do programu poprzez <b>"drag and drop"</b></p>'
                                       '<p style="margin: 0;"><b>Kolory oznaczają:</b></p>'
-                                      '<p style="margin: 0;">-<b style="color: gray;">szary</b> tryb offline z możliwością wczytania mapy.</p>'
-                                      '<p style="margin: 0;">-<b style="color: purple;">fioletowy</b> tryb offline. (Ostatni wczytany plik GML.)</p>'
-                                      '<p style="margin: 0;">-<b style="color: green;">zielony</b> poprawne wczytanie pliku GML.</p>'
-                                      '<p style="margin: 0;">-<b style="color: red;">czerwony</b> błąd podczas wczytywania pliku GML.</p>')
+                                      '<p style="margin: 0;">-<b style="color: purple;">fioletowy</b> Program pracuje na ostatnim wczytanym pliku GML.</p>'
+                                      '<p style="margin: 0;">-<b style="color: green;">zielony</b> Poprawne wczytanie pliku GML.</p>'
+                                      '<p style="margin: 0;">-<b style="color: red;">czerwony</b> Błąd podczas wczytywania pliku GML.</p>')
         
         self.myTextBox = QLineEdit(self)
         self.myTextBox.setText("")
         self.myTextBox.setReadOnly(True)
-        self.myTextBox.setMinimumWidth(146)
+        #self.myTextBox.setMinimumWidth(146)
         self.myTextBox.setFixedWidth(146)
         self.myTextBox.setFixedHeight(26)
         self.myTextBox.setCursorPosition(0)
         
         self.btn_clean = QtWidgets.QPushButton(self)
         self.btn_clean.setText("Wyczyść!!!")
-        self.btn_clean.setFixedWidth(95)
+        self.btn_clean.setFixedWidth(65)
         self.btn_clean.setFixedHeight(28)
         self.btn_clean.clicked.connect(self.clean_all)
         self.btn_clean.setToolTip('<p>Czyści dane z tabeli.</p>'
@@ -390,46 +539,35 @@ class MyWindow(QMainWindow):
         self.btn_all_points.clicked.connect(self.punkty_GML)
         self.btn_all_points.setToolTip('<p>Funkcja eksportuje wszystkie punkty, ich wsółrzędne oraz atrybuty.</p>')
 
-        self.btn_por_wsp = QtWidgets.QPushButton(self)
-        self.btn_por_wsp.setText("Por.")
-        if dark_mode_enabled:
-            self.btn_por_wsp.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Exchange-light")))
-        else:
-            self.btn_por_wsp.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Exchange-dark")))
-        self.btn_por_wsp.setFixedWidth(62)
-        self.btn_por_wsp.setFixedHeight(28)
-        self.btn_por_wsp.setIconSize(QtCore.QSize(24, 24))
-        self.btn_por_wsp.clicked.connect(self.por_wsp_win)
-        self.btn_por_wsp.setToolTip('Moduł umożliwiający porównanie współrzędnych.')
-
         self.btn_settings = QtWidgets.QPushButton(self)
         if dark_mode_enabled:
-            self.btn_settings.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Zębatka-light")))
+            self.btn_settings.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Zębatka-light")))
         else:
-            self.btn_settings.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Zębatka-dark")))
+            self.btn_settings.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Zębatka-dark")))
         self.btn_settings.setFixedWidth(28)
         self.btn_settings.setFixedHeight(28)
         self.btn_settings.setIconSize(QtCore.QSize(20, 20))
         self.btn_settings.clicked.connect(self.settings_menu)
+        self.btn_settings.setToolTip('Ustawienia')
         
         self.btn_donate = QtWidgets.QPushButton(self)
         self.btn_donate.setText("Donate")
         self.btn_donate.setMinimumWidth(0)
         #self.btn_donate.setMaximumWidth(80)
-        #self.btn_donate.setFixedWidth(80)
-        #self.btn_donate.setFixedHeight(26)
-        self.btn_donate.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("PayPal.svg")))
+        self.btn_donate.setFixedWidth(80)
+        self.btn_donate.setFixedHeight(26)
+        self.btn_donate.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("PayPal.svg")))
         self.btn_donate.clicked.connect(self.open_edge)
 
         self.btn_git = QtWidgets.QPushButton(self)
         self.btn_git.setText("Github")
         #self.btn_git.setMaximumWidth(80)
-        #self.btn_git.setFixedWidth(80)
-        #self.btn_git.setFixedHeight(26)
+        self.btn_git.setFixedWidth(80)
+        self.btn_git.setFixedHeight(26)
         if dark_mode_enabled:
-            self.btn_git.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Github-light")))
+            self.btn_git.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Github-light")))
         else:
-            self.btn_git.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Github-dark")))
+            self.btn_git.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Github-dark")))
         self.btn_git.clicked.connect(self.open_git)
 
         self.btn_map = QtWidgets.QToolButton(self)
@@ -439,9 +577,9 @@ class MyWindow(QMainWindow):
         b_l_m_font.setPointSize(10)  
         self.btn_map.setFont(b_l_m_font)
         if dark_mode_enabled:
-            self.btn_map.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Mapa-light")))
+            self.btn_map.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Mapa-light")))
         else:
-            self.btn_map.setIcon(QtGui.QIcon(path_manager.get_stylesheets_path("Mapa-dark")))
+            self.btn_map.setIcon(QtGui.QIcon(file_management.get_stylesheets_path("Mapa-dark")))
         self.btn_map.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         self.btn_map.setIconSize(QtCore.QSize(30, 30))
         self.btn_map.setFixedWidth(80)
@@ -454,7 +592,7 @@ class MyWindow(QMainWindow):
         self.comboBox.setMaxVisibleItems(30)
         self.comboBox.setFont(font)
         self.comboBox.setView(QtWidgets.QListView())
-        self.comboBox.setFixedWidth(200)
+        self.comboBox.setFixedWidth(160)
         self.comboBox.setFixedHeight(26)
         self.comboBox.activated.connect(self.last_window)        
         self.comboBox.setObjectName("comboBox")
@@ -470,7 +608,7 @@ class MyWindow(QMainWindow):
 
         self.btn_reset = QtWidgets.QPushButton(self)
         self.btn_reset.setText("Reset")
-        self.btn_reset.setFixedWidth(60)
+        self.btn_reset.setFixedWidth(50)
         self.btn_reset.setFixedHeight(30)
         self.btn_reset.clicked.connect(self.comboBox_Reset)
         self.btn_reset.setToolTip('<p>Reset listy działek.</p>')
@@ -478,21 +616,11 @@ class MyWindow(QMainWindow):
         self.table_widget = QTableWidget(self)
         self.table_widget.setColumnCount(16)
         self.table_widget.setRowCount(5)
-        self.table_widget.setAcceptDrops(True)
+        #self.table_widget.setAcceptDrops(True)
         self.table_widget.setObjectName("True")
         self.table_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.table_widget.customContextMenuRequested.connect(self.context_menu)
         self.setTableHeaders()
-        self.GMLTable()
-
-        self.btn_assistant = QtWidgets.QPushButton(self.function_frame)
-        self.btn_assistant.setText("Asystent operatu")
-        self.btn_assistant.move(5, 5)
-        self.btn_assistant.setFixedWidth(100)
-        self.btn_assistant.setFixedHeight(30)
-        self.btn_assistant.clicked.connect(self.run_DOCX_assistant)
-        self.btn_assistant.setToolTip('<p>Asystent operatu, podmienia tagi w pliku *.DOCX </p>'
-                                      'Następnie eksportuje poprawione dokumenty do wybranej lokalizacji.</p>')
 
 
         self.button_frame_layout.addWidget(self.btn_import)
@@ -500,23 +628,26 @@ class MyWindow(QMainWindow):
         self.button_frame_layout.addWidget(self.toggle_button)
         self.button_frame_layout.addWidget(self.myTextBox)
         self.button_frame_layout.addWidget(self.btn_clean)
-        self.button_frame_layout.addSpacerItem(QSpacerItem(25, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        #self.button_frame_layout.addSpacerItem(QSpacerItem(25, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        self.button_frame_layout.addStretch(4)
         self.button_frame_layout.addWidget(self.btn_osoby)
         self.button_frame_layout.addWidget(self.btn_budynki)
         self.button_frame_layout.addWidget(self.btn_dzialki)
         self.button_frame_layout.addWidget(self.btn_uzytki)
-        self.button_frame_layout.addSpacerItem(QSpacerItem(25, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        self.button_frame_layout.addWidget(self.btn_punkty)
+        self.button_frame_layout.addStretch(4)
+        #self.button_frame_layout.addSpacerItem(QSpacerItem(25, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
         self.button_frame_layout.addWidget(self.btn_points)
         self.button_frame_layout.addWidget(self.btn_upr_points)
         self.button_frame_layout.addWidget(self.btn_all_points)
-        self.button_frame_layout.addSpacerItem(QSpacerItem(5, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
-        self.button_frame_layout.addWidget(self.btn_por_wsp)
+        #self.button_frame_layout.addSpacerItem(QSpacerItem(5, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
+        #self.button_frame_layout.addWidget(self.btn_por_wsp)
         self.button_frame_layout.addSpacerItem(QSpacerItem(5, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
         self.button_frame_layout.addWidget(self.btn_settings)
         self.button_frame_layout.addSpacerItem(QSpacerItem(5, 0, QSizePolicy.Fixed, QSizePolicy.Fixed))
         self.button_frame_layout.addWidget(self.btn_donate)
         self.button_frame_layout.addWidget(self.btn_git)
-        self.button_frame_layout.addStretch(1)
+        #self.button_frame_layout.addStretch(1)
         self.button_frame_layout.addWidget(self.comboBox)
         self.button_frame_layout.addWidget(self.btn_load)
         self.button_frame_layout.addWidget(self.btn_reset)
@@ -564,11 +695,20 @@ class MyWindow(QMainWindow):
         self.btn_uzytki.clicked.connect(lambda: self.reset_and_set(self.btn_uzytki))
         self.btn_uzytki.setToolTip('<p>Funkcja wczytuje użytki w działce</p>')
 
-        self.set_button_styles(self.btn_budynki, self.btn_dzialki, self.btn_uzytki)
+        self.btn_punkty = QtWidgets.QPushButton(self)
+        self.btn_punkty.setText("Punkty")
+        self.btn_punkty.setGeometry(598, 2, 62, 26)
+        self.btn_punkty.setFixedWidth(62)
+        self.btn_punkty.setFixedHeight(26)
+        self.btn_punkty.clicked.connect(self.visualize_punkty)
+        self.btn_punkty.clicked.connect(lambda: self.reset_and_set(self.btn_punkty))
+        self.btn_punkty.setToolTip('<p>Funkcja wczytuje punkty w działce</p>')
+
+        self.set_button_styles(self.btn_budynki, self.btn_dzialki, self.btn_uzytki, self.btn_punkty)
 
     def init_map_button(self):
-        self.browse_in_geoportal = QPushButton(self.map_frame)
-        self.browse_in_geoportal.setIcon(QtGui.QIcon(path_manager.get_stylesheets_folder_path("Geoportal.svg")))
+        self.browse_in_geoportal = QPushButton(self.map_widget)
+        self.browse_in_geoportal.setIcon(QtGui.QIcon(file_management.get_stylesheets_folder_path("Geoportal.svg")))
         style = ("""QPushButton {
                 background-color: #ababab;
                 border: 1px solid #4d4d4d;
@@ -587,8 +727,8 @@ class MyWindow(QMainWindow):
         self.browse_in_geoportal.clicked.connect(MapHandler.find_parcel_in_geoportal)
         self.browse_in_geoportal.setToolTip("Po naciśnięciu tego przycisku wybierz działkę, która ma zostać otwarta w Geoportalu Krajowy.")
         
-        self.browse_in_street_view = QPushButton(self.map_frame)
-        self.browse_in_street_view.setIcon(QtGui.QIcon(path_manager.get_stylesheets_folder_path("StreetView.svg")))
+        self.browse_in_street_view = QPushButton(self.map_widget)
+        self.browse_in_street_view.setIcon(QtGui.QIcon(file_management.get_stylesheets_folder_path("StreetView.svg")))
         style = ("""QPushButton {
                 background-color: #ababab;
                 border: 1px solid #4d4d4d;
@@ -625,163 +765,204 @@ class MyWindow(QMainWindow):
         """)
 
     def reset_and_set(self, selected_button):
-        self.set_button_styles(self.btn_osoby, self.btn_budynki, self.btn_dzialki, self.btn_uzytki)
+        self.set_button_styles(self.btn_osoby, self.btn_budynki, self.btn_dzialki, self.btn_uzytki, self.btn_punkty)
         self.set_botton_border(selected_button)
+
+    def hide_all_in_function_win_layout(self):
+        """Ukrywa wszystkie widżety w układzie function_win_layout."""
+        for i in range(self.function_win_layout.count()):
+            widget = self.function_win_layout.itemAt(i).widget()
+            if widget is not None:
+                widget.setVisible(False)
+
+    def hide_function_widget(self, selected_button, widget):
+        self.set_button_styles(self.btn_asystent, self.btn_por_wsp, self.btn_gml, self.btn_kw, self.btn_r)
+
+        if widget.isVisible():
+            self.hide_all_in_function_win_layout()
+            widget.setVisible(False)
+        else:
+            self.hide_all_in_function_win_layout()
+            widget.setVisible(True)
+            self.set_botton_border(selected_button)
 
 
     def visualize_osoby(self):
+        column_index = 20
+        
         GlobalInterpreter.lastwindow = "GML"
-        self.clean()
-        self.table_widget.clear()
-        self.setTableHeaders()
-        
-        if GlobalInterpreter.prased_gml.empty:
-            self.myTextBox.setText('First Import GML!!!')
-            self.myTextBox.setCursorPosition(0)
+        df = self.gml.df_GML_personal_data.copy()
 
-            self.table_widget.setRowCount(5)
-            self.GMLTable()
-            self.table_widget.setObjectName("True")
-            self.adjustTableColumnWidth()
-            return
-        else:
-            self.table_widget.setObjectName(None)
-            prased_gml_V = GlobalInterpreter.prased_gml.copy()
-            if not self.comboBox.currentText() == "Wybierz Działkę.":
-                prased_gml_V = prased_gml_V[prased_gml_V['Działka'].isin([self.comboBox.currentText()])]
+        if self.settings.value('ShortOwnerAddr', False, type=bool) == True:
+            df["Adres"] = (df["ulica"] + " " + df["numerPorzadkowy"] + df["numerLokalu"].apply(lambda x: f" Lokal nr {x}" if pd.notna(x) and str(x).strip() != "" else ""))
+            df["Miejscowość"] = df["kodPocztowy"] + " " + df["miejscowosc"] + " " + df["kraj"]
 
-            prased_gml_V['Działka'] = prased_gml_V['Działka'].astype(str)
-            #prased_gml_V.reset_index(drop=True, inplace=True)
-            try:
-                prased_gml_V.fillna('',inplace=True)
-            except:
-                prased_gml_V
-            for r in range(len(prased_gml_V['Działka'])):
-                self.table_widget.insertRow(r)
-                for k in range(17):
-                    self.table_widget.setItem(r, k, QTableWidgetItem(str(prased_gml_V.iloc[r, k])))
-            self.table_widget.resizeColumnsToContents() #setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-        
-        self.color_duplicates_pastel(self.table_widget, column_index=13)
+            df["Adres_Kores."] = (df["ulica_Kores."] + " " + df["numerPorzadkowy_Kores."] + df["numerLokalu_Kores."].apply(lambda x: f" Lokal nr {x}" if pd.notna(x) and str(x).strip() != "" else ""))
+            df["Miejscowość_Kores."] = df["kodPocztowy_Kores."] + " " + df["miejscowosc_Kores."] + " " + df["kraj_Kores."]
+
+            df["nazwaPelna"] = df["nazwaPelna"].where(df["nazwaPelna"].str.strip() != "", 
+                                            df["pierwszeImie"].fillna("") + " " + df["drugieImie"].fillna("") + " " + df["pierwszyCzlonNazwiska"].fillna("") + " " + df["drugiCzlonNazwiska"].fillna(""))
+            
+            df = df[["idDzialki", "numerKW", "poleEwidencyjne", "dokladnoscReprezentacjiPola", "rodzajPrawa", "udzialWlasnosci", "rodzajWladania", "udzialWladania", "nazwaPelna", "nazwaSkrocona", "imieOjca", "imieMatki", "plec", "pesel", "regon", "informacjaOSmierci", "IDM", "status", "Adres", "Miejscowość", "Adres_Kores.", "Miejscowość_Kores.", "grupaRejestrowa", "idJednostkiRejestrowej"]]
+            column_index = 16
+
+        self.visualize_data_in_Table(df)
+        self.color_duplicates_pastel(self.table_widget, column_index=column_index)
 
     def visualize_budynki(self):
         GlobalInterpreter.lastwindow = "BUDYNKI"
-        self.clean()
-        self.table_widget.clear()
-        self.setBudynkiHeaders()
-
-        if GlobalInterpreter.status_budynki == None or GlobalInterpreter.status_budynki == True:
-            try:
-                df_budynki = pd.DataFrame(kartoteki(gml_file_path))  # path_dz
-                GlobalInterpreter.budynki_gml = df_budynki
-                GlobalInterpreter.status_budynki = False
-            except:
-                self.message("Error działki!", "#ab2c0c")
-                return
-        else:
-            df_budynki = GlobalInterpreter.budynki_gml.copy()
-
-        if GlobalInterpreter.status is False:
-            self.message("Offline.", "#975D9F")
-        if GlobalInterpreter.status is None:
-            self.message("Offline.")
-
-        df_budynki = df_budynki.copy()
-        if not self.comboBox.currentText() == "Wybierz Działkę.":
-            df_budynki = df_budynki[df_budynki['Działka'].isin([self.comboBox.currentText()])]
-        
-        duplicates = df_budynki.duplicated(subset=['Działka', 'KW'], keep='first')
-        df_budynki.loc[duplicates, ['Działka', 'KW']] = ''
-
-        try:
-            df_budynki.fillna('',inplace=True)
-        except:
-            pass
-
-        for r in range(len(df_budynki['Działka'])):
-            self.table_widget.insertRow(r)
-            for k in range(8):
-                self.table_widget.setItem(r, k, QTableWidgetItem(str(df_budynki.iloc[r, k])))
-        self.table_widget.resizeColumnsToContents()
+        df = self.gml.df_GML_budynki.copy()
+        self.visualize_data_in_Table(df)
 
     def visualize_dzialki(self):
         GlobalInterpreter.lastwindow = "DZIALKI"
-        self.clean()
-        self.table_widget.clear()
-        self.setDzialkiHeaders()
-
-        if GlobalInterpreter.status_działki == None or GlobalInterpreter.status_działki == True:
-            try:
-                df_działki = pd.DataFrame(gml_działki(gml_file_path))  # path_dz
-                GlobalInterpreter.działki_gml = df_działki
-                GlobalInterpreter.status_działki = False
-                #self.message("Offline.", "#686868")
-            except:
-                self.message("Error działki!", "#ab2c0c")
-                return
-        else:
-            df_działki = GlobalInterpreter.działki_gml.copy()
-        
-        if GlobalInterpreter.status is False:
-            self.message("Offline.", "#975D9F")
-        if GlobalInterpreter.status is None:
-             self.message("Offline.")
-
-        df_działki = df_działki.copy()
-        if not self.comboBox.currentText() == "Wybierz Działkę.":
-            df_działki = df_działki[df_działki['Działka'].isin([self.comboBox.currentText()])]
+        df = self.gml.df_GML_dzialki.copy()
         
         try:
-            df_działki.fillna('',inplace=True)
-        except:
-            df_działki
+            df = df.drop(columns=['klasouzytek'])
+        except Exception as e:
+            logging.exception(e)
+            print(e)
 
-        for r in range(len(df_działki['Działka'])):
-            self.table_widget.insertRow(r)
-            for k in range(5):
-                self.table_widget.setItem(r, k, QTableWidgetItem(str(df_działki.iloc[r, k]))) #(działki_gml.loc[r][k])
-        #self.table_widget.setColumnCount(3)
-        self.table_widget.resizeColumnsToContents()
+        self.visualize_data_in_Table(df)
 
     def visualize_uzytki(self):
         GlobalInterpreter.lastwindow = "UZYTKI"
+        df = self.gml.df_GML_dzialki.copy()
+        df = df.drop(columns=["grupaRejestrowa", "idJednostkiRejestrowej"])
+        df = df.explode("klasouzytek")
+        df = self.columns_explode(df, explode_on="klasouzytek", new_column=["OFU", "OZU", "OZK", "Pow."])
+        self.visualize_data_in_Table(df)
+
+    def visualize_punkty(self):
+        GlobalInterpreter.lastwindow = "PUNKTY"
+        df = self.gml.df_GML_points_in_dzialki.copy()
+        df = self.columns_explode(df, explode_on="geometria_punkt", new_column=["X", "Y"])
+        self.visualize_data_in_Table(df)
+
+
+    def columns_explode(self, df, explode_on=None, new_column=None):
+        try:
+            lista_df = df[explode_on].apply(pd.Series)
+            if new_column:
+                lista_df.columns = new_column
+
+            for col in lista_df.columns:
+                if col not in df.columns:
+                    df[col] = lista_df[col]
+
+            df = df.drop(columns=[explode_on])
+        except Exception as e:
+            logging.exception(e)
+            print(e)
+        return df
+
+    def column_mapping(self,df):
+        column_dictionary = {
+        "idDzialki": "Działka",
+        "numerKW": "KW",
+        "poleEwidencyjne": "Pole pow.",
+        "dokladnoscReprezentacjiPola": "Do:",
+        "rodzajPrawa": "Rodzaj Prawa",
+        "udzialWlasnosci": "Udział",
+        "rodzajWladania": "Rodzaj Wład.",
+        "udzialWladania": "Udział",
+        'nazwaPelna': "Nazwa Pełna",
+        'nazwaSkrocona': "Skrót",
+        "pierwszeImie": "Imie",
+        "drugieImie": "Drugie Imie",
+        "pierwszyCzlonNazwiska": "Nazwisko",
+        "drugiCzlonNazwiska": "Człon Nazw.",
+        "imieOjca": "Im. Ojca",
+        "imieMatki": "Im. Matki",
+        "pesel": "Pesel",
+        "plec": "Płeć",
+        "status": "Status",
+        "informacjaOSmierci": "Info. o śmierci",
+        "regon": "Regon",
+        "kraj": "Kraj",
+        "miejscowosc": "Miejs.",
+        "kodPocztowy": "kod poczt.",
+        "ulica": "Ulica",
+        "numerPorzadkowy": "Nr por.",
+        "numerLokalu": "Nr Lokalu",
+        "kraj_Kores.": "Kraj_Kores.",
+        "miejscowosc_Kores.": "Miejs_Kores.",
+        "kodPocztowy_Kores.": "Kod pocztowy_Kores.",
+        "ulica_Kores.": "Ilica_Kores.",
+        "numerPorzadkowy_Kores.":  "Nr por._Kores.",
+        "numerLokalu_Kores.": "Nr Lokalu_Kores.",
+        "IDM": "IDM",
+        "grupaRejestrowa": "Gr. Rejestrowa",
+        "idJednostkiRejestrowej": "Jedn. Rejestrowa",
+        "idPunktu": "Punkt",
+        "sposobPozyskania": "SPD",
+        "spelnienieWarunkowDokl": "ISD",
+        "rodzajStabilizacji": "STB",
+        "oznWMaterialeZrodlowym": "OZR",
+        "numerOperatuTechnicznego": "Nr Operatu Technicznego",
+        "dodatkoweInformacje": "Dodatkowe informacje",
+        "geometria_punkt": "WSP",
+        "rodzajWgKST": "KST",
+        "liczbaKondygnacjiNadziemnych": "l.kond.nad.",
+        "liczbaKondygnacjiPodziemnych": "l.kond.podz.",
+        "powZabudowy": "pow.zab.",
+        "lacznaPowUzytkowaLokaliWyodrebnionych": "łacz.pow.uż.wyodr.",
+        "lacznaPowUzytkowaLokaliNiewyodrebnionych": "łacz.pow.uż.niewyodr.",
+        "lacznaPowUzytkowaPomieszczenPrzynaleznych": "łacz.pow.uż.przyn.",
+        "dokumentWlasnosci": "dok.wł.",
+        "dodatkoweInformacje": "dod.inf."
+        
+        
+        }
+        
+        return df.rename(columns=column_dictionary)
+
+    def column_stripping(self, df, strip_id_on_columns=None):
+        df = df.copy()
+
+        if strip_id_on_columns is None:
+            return df
+
+        strip = True
+        if strip:
+            for col in df.columns:
+                if col in strip_id_on_columns:
+                    df[col] = df[col].str.rsplit('.', n=1).str.get(-1)
+        return df
+
+    def visualize_data_in_Table(self, df):
+        try:
+            if not self.comboBox.currentText() == "Wybierz Działkę.":
+                df = df[df['idDzialki'].isin([self.comboBox.currentText()])]  # Sortuj przed mapowaniem kolumn.
+        except Exception as e:
+            logging.exception(e)
+            print(e)
+
+        if self.settings.value('AddObreb', False, type=bool) == True:
+            df.insert(0, "Obręb", df["idDzialki"].str.rsplit('.', n=1).str.get(0))
+
+        if self.settings.value('StripID', False, type=bool) == True:
+            df = self.column_stripping(df, strip_id_on_columns=["idDzialki", "idJednostkiRejestrowej", "idPunktu", "idBudynku"])
+        
+        try:  # Replace  ['NaN', 'None', 'nan'] on ""
+            df = df.replace([None, "NaN", "None", "nan"], "").fillna("")
+        except Exception as e:
+            logging.exception(e)
+            print(e)
+
         self.clean()
         self.table_widget.clear()
-        self.setUzytkiHeaders()
+        self.table_widget.setObjectName(None)
+        
+        df = self.column_mapping(df)
 
-        if GlobalInterpreter.status_użytki == None or GlobalInterpreter.status_użytki == True:
-            try:
-                df_uzytki = pd.DataFrame(gml_użytek(gml_file_path))  # path_U
-                GlobalInterpreter.uzytki_gml = df_uzytki
-                GlobalInterpreter.status_użytki = False
-            except Exception as e:
-                logging.exception(e)
-                self.message("Error Użytki!", "#ab2c0c")
-                return
-        else:
-            df_uzytki = GlobalInterpreter.uzytki_gml.copy()
-
-        if GlobalInterpreter.status is False:
-            self.message("Offline.", "#975D9F")
-        if GlobalInterpreter.status is None:
-            self.message("Offline.")
-
-        df_uzytki = df_uzytki.copy()
-        if self.comboBox.currentText() != "Wybierz Działkę.":
-            df_uzytki = df_uzytki[df_uzytki['Działka'].isin([self.comboBox.currentText()])]
-
-        duplicates = df_uzytki.duplicated(subset=['Działka', 'KW', 'Pole. pow.'], keep='first')
-        df_uzytki.loc[duplicates, ['Działka', 'KW', 'Pole. pow.']] = ''
-
-        try:
-            df_uzytki.fillna('',inplace=True)
-        except Exception as e:
-            print(f"Error occurred during fillna operation: {e}")
-
-        for r in range(len(df_uzytki.index)):   #len(uzytki_dzialek['Działka'])): #len(uzytki_dzialek.index):
+        self.table_widget.setColumnCount(len(df.columns))
+        self.table_widget.setHorizontalHeaderLabels(df.columns.astype(str).tolist())
+        for r in range(len(df.index)):  # self.table_widget.setRowCount(len(df)) ---> speed up?
             self.table_widget.insertRow(r)
-            for k in range(5):
-                self.table_widget.setItem(r, k, QTableWidgetItem(str(df_uzytki.iloc[r, k])))
+            for k in range(len(df.columns)):
+                self.table_widget.setItem(r, k, QTableWidgetItem(str(df.iat[r, k])))
 
         self.table_widget.resizeColumnsToContents()
 
@@ -797,75 +978,82 @@ class MyWindow(QMainWindow):
             for column in range(column_count):
                 self.table_widget.setColumnWidth(column, column_width)
 
-    def import_GML(self):
-        fname = QFileDialog.getOpenFileName(self, 'open file', os.path.expanduser("~/Desktop"), 'GML File(*.gml)')
-        
-        GlobalInterpreter.Input_Path = fname[0]
+
+    def import_from_path(self):
+        path = QFileDialog.getOpenFileName(self, 'open file', os.path.expanduser("~/Desktop"), 'GML File(*.gml)')
 
         try:
-            obiekt = (f"GML Readere   Obiekt: {os.path.splitext(os.path.basename(GlobalInterpreter.Input_Path))[0]}")
+            obiekt = (f"GML Readere   Obiekt: {os.path.splitext(os.path.basename(GlobalInterpreter.input_path))[0]}")
             self.setWindowTitle(obiekt)
             self.settings.setValue("Tytuł", obiekt)
         except Exception as e:
             logging.exception(e)
 
-        if fname == ('', ''):
+        if path == ('', ''):
             return
-        else:
+        
+        GlobalInterpreter.input_path = path[0]
+        self.import_GML()
+
+    def import_GML(self):
+        path = GlobalInterpreter.input_path
+        if path is not None:
             try:
-                copy_file(fname[0], gml_file_path)
+                if Path(path).exists():
+                    copy_file(path, gml_file_path)
             except Exception as e:
                 logging.exception(e)
                 self.result_output("Parse GML Error!", "#ab2c0c")
                 return
-            try:
-                S = time.perf_counter()
-                GlobalInterpreter.prased_gml, GlobalInterpreter.działki_gml = parser.gml_reader(fname[0])
-                E = time.perf_counter()
-                print(f"{E-S:.4}")
-                GlobalInterpreter.status = False
-            except Exception as e:
-                logging.exception(e)
-                self.result_output("GML Reader Error!", "#ab2c0c")
-                return
-            
-            if GlobalInterpreter.status is False and self.settings.value('UproszczonaMapa', True, type=bool) == True:
-                self.refresh_map_view()
-            
-            GlobalInterpreter.reset()
-            GlobalInterpreter.status = True
-            
-            self.result_output("GML wczytany.", "#77C66E")
-        
-        self.last_window()
-        
-        return fname[0]
-    
-    def update_GML(self):
+
         try:
             S = time.perf_counter()
-            GlobalInterpreter.prased_gml, GlobalInterpreter.działki_gml = parser.gml_reader(gml_file_path)
+
+            self.gml = GMLParser(gml_file_path)
+            self.gml.initialize_gml_parse()
+            self.gml.initialize_graphic_data()
+            self.gml.initialize_personal_data()
+            self.gml.initialize_additional_data()
+            self.gml_handler.GML = self.gml.df_GML_personal_data
+
+            self.save_dataframe()
+
             E = time.perf_counter()
+
             print(f"{E-S:.4}")
+            logging.info(f"Import GML time: {E-S:.4}")
+
         except Exception as e:
             logging.exception(e)
             print(e)
             self.result_output("GML Reader Error!", "#ab2c0c")
             return
         
+        #if self.settings.value('UproszczonaMapa', True, type=bool) == True:
+        self.refresh_map_view()
 
-        if GlobalInterpreter.status is None and self.settings.value('UproszczonaMapa', True, type=bool) == True:
-                self.refresh_map_view()
-        
-        GlobalInterpreter.reset()
-        GlobalInterpreter.status = True
-        
-        self.result_output("GML wczytany!!!", "#77C66E")
-        ToggleButton.updateIndicatorColor(self.toggle_button, QColor("#77C66E")) #FFD700    
-        
         GlobalInterpreter.input_path = gml_file_path
-
+        
+        self.result_output("GML wczytany.", "#77C66E")
         self.last_window()
+
+    def import_dataframe_on_start(self):
+        try:
+            with open(data_base_file_path, "rb") as f:
+                df_dict = pd.read_pickle(f)
+                self.gml.restory_dataframes(df_dict)
+                self.gml_handler.GML = self.gml.df_GML_personal_data
+            logging.info("Dataframe restored.")
+        except Exception as e:
+            logging.exception(e)
+
+    def save_dataframe(self):
+        try:
+            df = self.gml.story_dataframes()
+            with open(data_base_file_path, "wb") as f:
+                pd.to_pickle(df, f)
+        except Exception as e:
+            logging.exception(e)
 
 
     def export_data(self):
@@ -914,17 +1102,15 @@ class MyWindow(QMainWindow):
             self.visualize_dzialki()
         elif GlobalInterpreter.lastwindow == "UZYTKI":
             self.visualize_uzytki()
+        elif GlobalInterpreter.lastwindow == "PUNKTY":
+            self.visualize_punkty()
         else:
             self.visualize_osoby()
         self.myTextBox.setText(self.comboBox.currentText())
 
     def settings_menu(self):
-        self.sett = SettingsWindow(dark_mode_enabled, versja)
+        self.sett = SettingsWindow(MainWindow, dark_mode_enabled, version)
         self.sett.show()
-
-    def por_wsp_win(self):
-        self.win_wsp = Win_coordinate_comparison(dark_mode_enabled)
-        self.win_wsp.show()
 
 
     def import_Excel(self):
@@ -961,7 +1147,7 @@ class MyWindow(QMainWindow):
     def GMLTable(self):  # Wprowadź dane do tabeli
         for row in range(5):
             for column in range(16):
-                item = QTableWidgetItem("Wczytaj GML")
+                item = QTableWidgetItem("Zaimportuj GML")
                 self.table_widget.setItem(row, column, item)
 
     def run_my_window_map(self):
@@ -971,11 +1157,9 @@ class MyWindow(QMainWindow):
             self.myTextBox.setStyleSheet("")
         else:
             try:
-                self.window = WindowMap(GlobalInterpreter.input_path, GlobalInterpreter.prased_gml, xlsx_target_path)
-                #self.map_sig = EmitMapW()
-                #self.map_sig.item_signal.connect(self.receive_item)
-                self.window.item_signal.connect(self.receive_item)
-                self.window.show()
+                self.window_map = WindowMap(MainWindow, GlobalInterpreter.input_path, GlobalInterpreter.prased_gml, xlsx_target_path)
+                self.window_map.item_signal.connect(self.receive_item)
+                self.window_map.show()
             except Exception as e:
                 logging.exception(e)
                 self.myTextBox.setText('Error on open Map!!!')
@@ -986,15 +1170,17 @@ class MyWindow(QMainWindow):
     def comboBox_Reset(self):
         self.comboBox.clear()
         self.comboBox.addItem("Wybierz Działkę.")
+        self.last_window()
 
     def comboBox_Update(self):
-        if GlobalInterpreter.działki_gml.empty:
-            lista_dzialek = lista_dzialek_update(gml_file_path)  # Path
-            działki_gml_list = lista_dzialek['Działka']
-            self.message("Offline!", "#975D9F")
-        else:
-            działki_gml_list = GlobalInterpreter.działki_gml['Działka'].copy()
-
+        df = self.gml.df_GML_sorted_działki
+        
+        if df.empty:
+            self.message("Not file imported!", "#975D9F")
+            return
+        
+        działki_gml_list = df['idDzialki'].copy()
+        
         self.comboBox_Reset()
         działki_gml_list.reset_index(drop=True, inplace=True)
         działki_gml_list.fillna('',inplace=True)
@@ -1236,9 +1422,6 @@ class MyWindow(QMainWindow):
                 pass
 
             self.result_output("Offline.", "#686868")
-            
-            GlobalInterpreter.reset()
-            GlobalInterpreter.status = None
 
     def message(self, Text = None, color = "#686868"): #message
         try:
@@ -1266,7 +1449,8 @@ class MyWindow(QMainWindow):
             logging.exception(e)
 
     def receive_item(self, id=None):
-        MainWindow.comboBox_Reset()
+        self.comboBox.clear()
+        self.comboBox.addItem("")
         MainWindow.comboBox.setItemText(0, id)
         MainWindow.myTextBox.setText(id)
 
@@ -1302,10 +1486,21 @@ class MyWindow(QMainWindow):
 
         print("Copy data complete.")
 
+    def search_kw(self):
+        selected_items = self.table_widget.selectedItems()
+        if selected_items:  # Check if a cell is selected
+            value = selected_items[0].text()  # Get the text of the first selected cell
+            self.kw_signal.emit(value)  # Send the value to KW_Handler
+        else:
+            print("No cell selected. Please select a cell.")
+
+
     def context_menu(self, pos):
         context_menu = QMenu(self)
         copy_action = context_menu.addAction("Kopiuj")
         copy_action.triggered.connect(self.copy_to_clipboard)
+        kw_action = context_menu.addAction("Szukaj KW")
+        kw_action.triggered.connect(self.search_kw)
         context_menu.exec(QCursor.pos())
 
 
@@ -1321,18 +1516,18 @@ class MyWindow(QMainWindow):
         self.scene = QGraphicsScene()
         self.map_handler = MapHandler(self.scene, gml_file_path)
 
-        if Path(gml_file_path).exists():
+        if Path(gml_file_path).exists() and self.settings.value('LastGML', True, type=bool) == True:
             try:
-                self.gml = GMLParser(gml_file_path)
-                df = self.gml.initialize_gml()
 
-                if self.settings.value('UproszczonaMapa', True, type=bool) == True:
-                    self.map_handler.load_map(df)
+                df = self.gml.df_GML_graphic_data
+
+                #if self.settings.value('UproszczonaMapa', True, type=bool) == True:
+                self.map_handler.load_map(df)
             except Exception as e:
                 logging.exception(e)
                 print(e)
 
-        self.gview = QDMGraphicsView(self.map_frame)
+        self.gview = QDMGraphicsView(self.map_widget)
         self.gview.setStyleSheet("""
                                  QGraphicsView {
                                  border: none;
@@ -1340,28 +1535,37 @@ class MyWindow(QMainWindow):
                                  }""")
         self.gview.setScene(self.scene)
         self.gview.setGeometry(0, 0, 500, 500)
+        self.gview.setAcceptDrops(True)
+
+        self.map_layout.addWidget(self.gview, 0, 0, 1, 1)
         
         # Expand the scene rect
-        expanded_scene_rect = self.scene.sceneRect().adjusted(-1000, -1000, 1000, 1000)
+        margin = 2000
+        expanded_scene_rect = self.scene.sceneRect().adjusted(-margin, -margin, margin, margin)  # (-2000, -2000, 2000, 2000)
         self.scene.setSceneRect(expanded_scene_rect)
         self.gview.setSceneRect(expanded_scene_rect)
 
         self.lista_warstw = [("EGB_DzialkaEwidencyjna", self.map_handler.data.DzialkaEwidencyjna, True),
                 ("EGB_PunktGraniczny", self.map_handler.data.PunktGraniczny, False),
+                ("EGB_PunktGranicznyOpis", self.map_handler.data.PunktGranicznyOpis, False),
                 ("EGB_KonturKlasyfikacyjny", self.map_handler.data.KonturKlasyfikacyjny, False),
-                #("EGB_KonturUzytkuGruntowego", self.map_handler.data.KonturUzytkuGruntowego, True),
+                ("EGB_KonturUzytkuGruntowego", self.map_handler.data.KonturUzytkuGruntowego, False),
                 ("EGB_Budynek", self.map_handler.data.Budynek, True),
                 ("EGB_AdresNieruchomosci", self.map_handler.data.AdresNieruchomosci, True),
+                ("BDOT_Budynek", self.map_handler.data.Budynek_BDOT, True),
                 ("OT_Ogrodzenia", self.map_handler.data.Ogrodzenia, True), 
-                ("OT_Budowle",self.map_handler.data.Budowle , True),
+                ("OT_Budowle", self.map_handler.data.Budowle , True),
+                #("Rastry", self.map_handler.data.Raster2000, True),
                 ("Mark points",self.map_handler.data.mark , True)]
         
-        self.draggableFrame = DraggableItemFrame(x=5, y=5, h=160, lista=self.lista_warstw)
-        self.draggableFrame.setParent(self.map_frame)
+        self.draggableFrame = DraggableItemFrame(x=5, y=5, h=220, lista=self.lista_warstw)  # 180
+        self.draggableFrame.setParent(self.map_widget)
         self.draggableFrame.list_signal.connect(self.map_handler.hide_items_by_list) 
         self.draggableFrame.raise_()
 
         self.map_handler.set_map_items_visible_by_list(self.lista_warstw)
+        #url = "https://opendata.geoportal.gov.pl/ortofotomapa/66701/66701_679814_6.113.31.16.tif"
+        #self.map_handler.add_tiff(url)
 
     def clean_map_view(self):
         self.scene.clear()
@@ -1369,17 +1573,21 @@ class MyWindow(QMainWindow):
     def refresh_map_view(self):
         """Refresh the visualizations and update the viewport."""
 
-        self.gml = GMLParser(gml_file_path)
-        df = self.gml.initialize_gml()
+        df = self.gml.df_GML_graphic_data
         self.load_visualizations(df)
 
         self.scene.setSceneRect(self.scene.itemsBoundingRect())
-        expanded_scene_rect = self.scene.sceneRect().adjusted(-1000, -1000, 1000, 1000)
+
+        margin = 2000
+        expanded_scene_rect = self.scene.sceneRect().adjusted(-margin, -margin, margin, margin)  # (-1000, -1000, 1000, 1000)
         
         self.gview.setSceneRect(expanded_scene_rect)
         self.gview.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
 
+        self.gview.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.map_handler.set_map_items_visible_by_list(self.lista_warstw)
+        self.gview.reset_zoom()
+        
 
     def remove_gfs_file(self):
         try:
@@ -1394,16 +1602,9 @@ class MyWindow(QMainWindow):
         MapHandler.find_polygon_in_web(self)
 
 
-    def run_DOCX_assistant(self):
-        try:
-            self.DOCX_assistant = DOCX()
-            self.DOCX_assistant.show()
-        except Exception as e:
-                logging.exception(e)
-                print(e)
-
-
 if __name__ == '__main__':
+    #QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
+
     app = QApplication( sys.argv )
 
     argv_path = None
@@ -1412,11 +1613,9 @@ if __name__ == '__main__':
 
     dark_mode_enabled = settings.value('DarkMode', False, type=bool)
 
-    logging.debug(path_manager.get_base_path())
-
     try:
         if dark_mode_enabled:
-            app.setStyleSheet(Path(path_manager.get_stylesheets_folder_path('Darkmode.qss')).read_text())
+            app.setStyleSheet(Path(file_management.get_stylesheets_folder_path('Darkmode.qss')).read_text())
         else:
             app.setStyleSheet("""
             QGraphicsView {

@@ -129,6 +129,16 @@ if __name__ == "__main__":
             except Exception as e:
                 logging.exception(e) 
 
+        def run(self, checked):
+            try:
+                if checked:
+                    self.toggle_button.updateIndicatorColor(QColor("#77C66E"))  # Green when ON
+                else:
+                    self.toggle_button.updateIndicatorColor(QColor("#FFD700"))  # Gold when OFF
+            except Exception as e:
+                logging.exception(e)
+
+
     MainWindow = MyWindow()
     MainWindow.show()
     sys.exit(app.exec())

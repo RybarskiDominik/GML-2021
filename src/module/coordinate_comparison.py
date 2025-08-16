@@ -15,8 +15,8 @@ import os
 
 from model.DataFrameProcessing import myDataFrame
 from module.ListWidget import ListWidget
-from obf.punkty import punkt_graniczny
-from obf.punkty_poligon import punkty_w_dzialkach
+from processing.punkty import punkt_graniczny
+from processing.punkty_poligon import punkty_w_dzialkach
 
 logger = logging.getLogger(__name__)
 
@@ -872,7 +872,4 @@ class Win_coordinate_comparison(QMainWindow):
 
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window_wsp = Win_coordinate_comparison()
-    window_wsp.show()
-    sys.exit(app.exec())
+    pass

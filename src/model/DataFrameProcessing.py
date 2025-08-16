@@ -374,28 +374,4 @@ class myDataFrame(pd.DataFrame):
 
 
 if __name__ == "__main__":
-    path = r""
-
-    myDataFrame.default()
-    myDataFrame.read(path, 'df_1')
-    myDataFrame.clean('df_1')
-    myDataFrame.set_float_and_name('df_1')
-
-    #myDataFrame.sort('df_1', 0)
-
-    #myDataFrame.create_new_data()
-    #myDataFrame.subtract()
-    
-    #print(myDataFrame.df_1)
-    #print('')
-    #print(myDataFrame.df_2)
-    #print('')
-    #print(myDataFrame.df_3)
-    #print('')
-
-    #myDataFrame.drop_H_in_df("df_all")
-    #myDataFrame.drop_columns_in_df("df_all", "H", "DH")
-    #myDataFrame.drop_columns_in_df("df_all", "SPD", "ISD", "STB")
-
-    myDataFrame.display_data()
-    print(myDataFrame.df_all)
+    pass

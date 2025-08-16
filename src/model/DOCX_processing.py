@@ -1,37 +1,66 @@
 from PySide6.QtWidgets import QApplication, QFileDialog
 from docx.shared import Inches
 from docx import Document
+from model.python_docx_replace import docx_replace
 import sys, os
 
-
 def inwestigation_docx(docx_path, output_path, data):
+    doc = Document(docx_path)
+    docx_replace(doc, data)
+    doc.save(output_path)
+
+def inwestigation_docx_OLD(docx_path, output_path, data):
     
     doc = Document(docx_path)
     xml_content = doc._element
     namespaces = doc.element.nsmap
+    
+    def replace_text_in_runs_simple(paragraph, data):
+        for run in paragraph.runs:
+            for key, value in data.items():
+                if key in run.text:
+                    run.text = run.text.replace(key, value)
 
-    for paragraph in doc.paragraphs:  # Replace text in paragraphs (Check all runs)
+    def replace_text_in_runs(paragraph, data):
+        full_text = "".join(run.text for run in paragraph.runs)  # Merging divided tags
+        """ 
+        full_text = ""
+        for run in paragraph.runs:
+            full_text += run.text
+        """
+        modified = False  # Flag pointing whether a swap was made
+
         for key, value in data.items():
-            if key in paragraph.text:
-                #print(f"Found '{key}' in paragraph: {paragraph.text}")  # Debugging
-                for run in paragraph.runs:
-                    #print(run.text)
-                    if key in run.text or key.lower() in run.text.lower():
-                        #print(f"Replacing '{key}' with '{value}' in run: {run.text}")  # Debugging
+            if key in full_text:
+                full_text = full_text.replace(key, value)
+                modified = True
+
+        if modified:  # If a replacement is made, we overwrite the text in the paragraph
+            for run in paragraph.runs:
+                run.text = ""
+            paragraph.add_run(full_text)
+
+    # Replacement in regular paragraphs
+    for paragraph in doc.paragraphs:
+        replace_text_in_runs_simple(paragraph, data)
+
+    # Replacement in tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    replace_text_in_runs(paragraph, data)
+    
+    # Replacement in header and footer
+    for section in doc.sections:
+        for paragraph in section.header.paragraphs + section.footer.paragraphs: #header = section.header, footer = section.footer
+            for run in paragraph.runs:
+                for key, value in data.items():
+                    if key in run.text:
                         run.text = run.text.replace(key, value)
 
-    for section in doc.sections:  # Replace text in headers and footers (Check all paragraphs in sections)
-        header = section.header
-        footer = section.footer
-        for paragraph in header.paragraphs + footer.paragraphs:
-            for key, value in data.items():
-                if key in paragraph.text:
-                    #print(f"Found '{key}' in header/footer paragraph: {paragraph.text}")  # Debugging
-                    for run in paragraph.runs:
-                        if key in run.text:
-                            #print(f"Replacing '{key}' with '{value}' in run: {run.text}")  # Debugging
-                            run.text = run.text.replace(key, value)
 
+    # Replacement in textboxes
     for shape in xml_content.xpath("//w:txbxContent"):  # Replace text in shapes (textboxes) using XML
         for node in shape.xpath(".//w:t", namespaces=namespaces):
 
@@ -40,64 +69,53 @@ def inwestigation_docx(docx_path, output_path, data):
                     if key in node.text:
                         node.text = node.text.replace(key, value)
 
+    """
+    # Replacement in header and footer
+    for section in doc.sections:
+        for paragraph in section.header.paragraphs + section.footer.paragraphs: #header = section.header, footer = section.footer
+            replace_text_in_runs(paragraph, data)
+    
+    for section in doc.sections:
+        for header_footer in [section.header, section.footer]:
+            for paragraph in header_footer.paragraphs:
+                if not any(run.element.tag == 'w:drawing' for run in paragraph.runs): 
+                    replace_text_in_runs(paragraph, data)
+
+    for shape in doc.inline_shapes:
+        if shape._element.xpath(".//w:t"):  # Sprawdzenie, czy kształt zawiera tekst
+            for node in shape._element.xpath(".//w:t"):
+                for key, value in data.items():
+                    if node.text and key in node.text:
+                        node.text = node.text.replace(key, value)
+    """
+
     doc.save(output_path)
 
-def select_folder_and_process(path_to_doc=None, output_folder=None, data=None):
+def select_folder_and_process(path_to_docx=None, output_folder=None, data=None):
 
     if data is None:
         data = {}
 
-    if not path_to_doc:
-        path_to_doc = QFileDialog.getExistingDirectory(None, "Select Folder with DOCX Files")  # Select input folder
-    if not path_to_doc:
-        return
+    if not path_to_docx:
+        path_to_docx = QFileDialog.getExistingDirectory(None, "Select Folder with DOCX Files")  # Select input folder
+    if not path_to_docx:
+        return 0
 
     output_folder = QFileDialog.getExistingDirectory(None, "Select Output Folder", os.path.expanduser("~/Desktop"))  # Select output folder
     if not output_folder:
-        return
+        return 0
+    
+    if os.path.abspath(path_to_docx) == os.path.abspath(output_folder):
+        return 0
 
-    for filename in os.listdir(path_to_doc):  # Process all files in the selected folder
+    for filename in os.listdir(path_to_docx):  # Process all files in the selected folder
         if filename.endswith('.docx'):
-            docx_path = os.path.join(path_to_doc, filename)
-            output_path = os.path.join(output_folder, f"modified_{filename}")
+            docx_path = os.path.join(path_to_docx, filename)
+            output_path = os.path.join(output_folder, filename)  # f"modified_{filename}"
             inwestigation_docx(docx_path, output_path, data)
+    return 1
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-
-    data = {'[NR_DZIALKI]': '',
-            '[IDENTYFIKATOR]': '',
-            '[WOJ]': '',
-            '[POW]': '',
-            '[JEWID]': '',
-            '[JEWID_ID]': '',
-            '[OBR]': '',
-            '[OBR_ID]': '',
-            '[ARKUSZ]': '',
-            '[DATA_OKLADKA]': '',
-            '[DATA_SPIS]': '',
-            '[DATA_SPR]': '',
-            '[DATA]': '',
-            '[CEL]': '',
-            '[WYKONAWCA]': '',
-            '[KIEROWNIK]': '',
-            '[KIEROWNIK_UPR]': '',
-            '[UPRAC]': '',
-            '[TERMIN_R]': '',
-            '[TERMIN_Z]': ''
-            }
-
-
-
-
-
-
-
-
-
-
-
-
-
+    pass
 

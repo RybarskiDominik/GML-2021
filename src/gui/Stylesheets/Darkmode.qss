@@ -38,7 +38,7 @@ QGraphicsView {
 }
 
 QCheckBox {
-    color: black;
+    color: white;
 }
 
 QLineEdit {
@@ -89,7 +89,7 @@ QComboBox::drop-down {
 }
 QComboBox::down-arrow {
     border: none;
-    image : url(gui/Stylesheets/images_dark-light/Lista-light.svg);
+    image: url(gui/Stylesheets/images_dark-light/Lista-light.svg);
     width: 50px;
     haight 50px;
 }
@@ -215,3 +215,8 @@ QScrollBar::sub-line:horizontal{
     border: 0px solid white;
     width: 0px;
 }
+
+
+QGroupBox {
+    color: white;
+    }

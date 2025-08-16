@@ -1,28 +1,23 @@
 from PySide6.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QTableView,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-    QHBoxLayout,
-    QLineEdit,
-    QMessageBox,
-    QLabel,
-    QHeaderView,
-    QFileDialog,
-    QComboBox,
-    QSpacerItem,
-    QSizePolicy
+    QApplication, QMainWindow, QTableView, QPushButton,
+    QVBoxLayout, QWidget, QHBoxLayout, QLineEdit, QMessageBox,
+    QLabel, QHeaderView, QFileDialog, QComboBox, QSpacerItem,
+    QSizePolicy, QMenu
 )
-from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtGui import QStandardItem, QStandardItemModel, QCursor
+from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6 import QtCore
 from model.DOCX_processing import select_folder_and_process
+from function.FileMenager import FileManager
+file_management = FileManager()
 import pandas as pd
 
-import os, sys, json
+import os, sys, json, logging
+
+logger = logging.getLogger(__name__)
 
 class DataFrameTableModel(QStandardItemModel):
+    send_dict = Signal(object)
     def __init__(self, df=None):
         super().__init__()
         self._df = df #if df is not None else pd.DataFrame(columns=["Name", "Tag", "Data"])
@@ -91,6 +86,7 @@ class DataFrameTableModel(QStandardItemModel):
             value = item.text()
             self._df.iat[row, col] = value
             self.add_to_history()
+            self.send_dictionary()
             #print(f"Changed row {row}, column {col} to {value}")
 
     def add_default_df(self, default_df):
@@ -101,6 +97,7 @@ class DataFrameTableModel(QStandardItemModel):
         #self.add_to_history()  # Add the default state to history
         self.update_view()
         self.add_default_value = True
+        #self.send_dictionary()
 
     def reset_to_default(self):
         """Reset the DataFrame to its default state."""
@@ -141,14 +138,23 @@ class DataFrameTableModel(QStandardItemModel):
         """Return the current DataFrame."""
         return self._df
 
+    def send_dictionary(self):
+        df = self.get_dataframe()
+        dictionaries = {}
+        for _, row in df.iterrows():
+            dictionaries[row.iloc[1]] = row.iloc[2]
+        self.send_dict.emit(dictionaries)
+        #print(dictionaries)
+        return dictionaries
+
 class DOCX(QMainWindow):
     def __init__(self, Path=None):
         super().__init__()
+        self.dict = None
         self.resize(650, 735)
         self.setBaseSize(650, 735)
 
-        self.default_Path = Path
-        self.Path = Path
+        self.Path = file_management.templates_folder_path
         self.setWindowTitle("Tag Data Manager")
 
         self.df = pd.DataFrame()
@@ -163,13 +169,15 @@ class DOCX(QMainWindow):
         # Create main layout
         layout = QVBoxLayout()
         layout.setContentsMargins(1, 2, 1, 1)
-        layout.setSpacing(1)
+        #layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         # Input fields for adding a tag
         self.main_docx_path = QComboBox(self)
         self.main_docx_path.setFixedWidth(155)
         self.main_docx_path.addItem("Select path to docx files")  # Add default item
-
+        self.main_docx_path.setToolTip("Folder nadrzędny, w którym są umieszczone foldery podrzędne z plikami *.DOCX")
+        
         if self.settings.value('DocxPath') is not None:
             self.Path = self.settings.value('DocxPath')
             self.set_folder_name_in_QComboBox(self.Path)
@@ -178,26 +186,35 @@ class DOCX(QMainWindow):
 
         self.edit_main_docx_path = QPushButton("DOCX")
         #self.edit_main_docx_path.setFixedHeight(26)
-        self.edit_main_docx_path.setFixedWidth(55)
+        self.edit_main_docx_path.setFixedWidth(45)
+        self.edit_main_docx_path.setToolTip("Można wybrać własną ścieżkę do folderów z plikami *.DOCX")
         self.edit_main_docx_path.clicked.connect(self.edit_path)
 
         self.reset_main_docx_path = QPushButton("Reset")
         #self.reset_main_docx_path.setFixedHeight(26)
-        self.reset_main_docx_path.setFixedWidth(50)
+        self.reset_main_docx_path.setFixedWidth(40)
+        self.reset_main_docx_path.setToolTip("Resetuje ścieżkę do plików *.DOCX")
         self.reset_main_docx_path.clicked.connect(self.reset_path)
 
         self.import_button = QPushButton("Import")
         self.import_button.setFixedWidth(50)
+        self.import_button.setToolTip("Importuje TAGI")
         self.import_button.clicked.connect(self.import_dict)
+        self.import_button
+
         self.export_button = QPushButton("Export")
         self.export_button.setFixedWidth(50)
+        self.export_button.setToolTip("Exportuje TAGI")
         self.export_button.clicked.connect(self.export_dict)
 
         self.save_button = QPushButton("Save")
         self.save_button.setFixedWidth(40)
+        self.save_button.setToolTip("Zapiszuje obecne dane z tabeli do pamięci.")
         self.save_button.clicked.connect(self.save_list)
+
         self.reset_button = QPushButton("default")
         self.reset_button.setFixedWidth(50)
+        self.reset_button.setToolTip("Resetuje dane w tabeli.")
         self.reset_button.clicked.connect(self.reset_list)
 
         self.undo_button = QPushButton("Undo")
@@ -208,6 +225,8 @@ class DOCX(QMainWindow):
 
         self.modify_button = QPushButton("Modify DOCX")
         self.modify_button.setFixedWidth(80)
+        self.modify_button.setToolTip("""Modyfikuje pliki *.DOCX w oparciu o dane w tabeli.
+                                      Należy podać ścieżkę do miejsca zapisu zmodyfikowanych plików *.DOCX""")
         self.modify_button.clicked.connect(self.modify_docx)
         
         input_layout = QHBoxLayout()
@@ -232,9 +251,14 @@ class DOCX(QMainWindow):
         # Create table view
         self.table_model = DataFrameTableModel()
         self.table_model.add_default_df(self.df)
+
+        self.dict = self.table_model.send_dictionary()
+
         self.table_view = QTableView()
         self.table_view.setModel(self.table_model)
         #self.table_view.setEditTriggers(QTableView.DoubleClicked)
+        self.table_view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table_view.customContextMenuRequested.connect(self.context_menu)
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         layout.addWidget(self.table_view)
@@ -285,7 +309,7 @@ class DOCX(QMainWindow):
 
     def edit_path(self):
         try:
-            path_to_folder = QFileDialog.getExistingDirectory(self, "Select Folder", self.Path)
+            path_to_folder = QFileDialog.getExistingDirectory(self, "Select Folder", str(self.Path))
         except:
             path_to_folder = QFileDialog.getExistingDirectory(self, "Select Folder")
         
@@ -297,9 +321,10 @@ class DOCX(QMainWindow):
         self.set_folder_name_in_QComboBox(path_to_folder)
 
     def reset_path(self):
-        self.Path = self.default_Path
-        self.settings.setValue("DocxPath", self.default_Path)
+        self.Path = file_management.templates_folder_path
+        self.settings.setValue("DocxPath", self.Path)
         self.main_docx_path.clear()
+        self.set_folder_name_in_QComboBox(self.Path)
 
     def add_tag(self):
         """Handle adding a new tag."""
@@ -335,12 +360,14 @@ class DOCX(QMainWindow):
         current_index = self.main_docx_path.currentIndex()
         path = self.main_docx_path.itemData(current_index)
 
-        df = self.table_model.get_dataframe()
+        self.df = self.table_model.get_dataframe()
         dictionaries = {}
-        for _, row in df.iterrows():
+        for _, row in self.df.iterrows():
             dictionaries[row.iloc[1]] = row.iloc[2]
         
-        select_folder_and_process(path_to_doc=path, data=dictionaries)
+        result = select_folder_and_process(path_to_docx=path, data=dictionaries)
+        if result == 0:
+            logging.error("ERROR on modify docx.")
 
     def import_dict(self):
         """Import a dictionary and update the table model."""
@@ -367,13 +394,15 @@ class DOCX(QMainWindow):
             return
 
         try:
+            self.df = self.table_model.get_dataframe()
             data_list = [{"Name": row["Name"], "Tag": row["Tag"], "Data": row["Data"]} for _, row in self.df.iterrows()]
 
             with open(file_name, "w", encoding="utf-8") as f:  # Save the data to a file
                 json.dump(data_list, f, ensure_ascii=False, indent=4)
 
-            QMessageBox.information(self, "Success", "Dictionary exported successfully.")
         except Exception as e:
+            logging.exception(e)
+            print(e)
             QMessageBox.warning(self, "Error", f"Failed to export dictionary: {e}")
 
     def save_list(self):
@@ -384,32 +413,31 @@ class DOCX(QMainWindow):
 
     def default_list(self):
         data = [
-        (('Numer działki'),'[NR_DZIALKI]', ''),
-        (('Identyfikator'),'[IDENTYFIKATOR]', ''),
+        (('Numer działki'),'NR_DZIALKI', ''),
+        (('KW'),'KW', ''),
+        (('Identyfikator'),'IDENTYFIKATOR', ''),
         
-        (('Województwo'),'[WOJ]', ''),
-        (('Powiat'),'[POW]', ''),
-        (('Jed. ewid.'),'[JEWID]', ''),
-        (("ID Jed. ewid."),'[JEWID_ID]', ''),
-        (("Obręb"),'[OBR]', ''),
-        (("ID Obrębu"),'[OBR_ID]', ''),
+        (('Województwo'),'WOJ', ''),
+        (('Powiat'),'POW', ''),
+        (('Jed. ewid.'),'JEWID', ''),
+        (("ID Jed. ewid."),'JEWID_ID', ''),
+        (("Obręb"),'OBR', ''),
+        (("ID Obrębu"),'OBR_ID', ''),
 
-        (('Arkusz'),'[ARKUSZ]', ''), 
-        (('Punkt osnowy nr 1'),'[OSN1]', ''), 
-        (('Punkt osnowy nr 2'),'[OSN2]', ''), 
+        (('Arkusz'),'ARKUSZ', ''), 
+        (('Punkt osnowy nr 1'),'OSN1', ''), 
+        (('Punkt osnowy nr 2'),'OSN2', ''), 
 
-        (('Data na okładce'),'[DATA_OKLADKA]', ''),
-        (('Data w spisie treści'),'[DATA_SPIS]', ''),
-        (('Data w sprawozdaniu'),'[DATA_SPR]', ''),
-        (('Data'),'[DATA]', ''),
+        (('Data sporządzenia'),'DATA', ''),
+        #(('Data z czynności'),'DATA_C', ''),
 
-        (('Cel pracy'),'[CEL]', ''),
-        (('Wykonawca'),'[WYKONAWCA]', ''),
-        (('Kierownik'),'[KIEROWNIK]', ''),
-        (('Nr upr. kierownika'),'[KIEROWNIK_UPR]', ''),
-        (('Uczestnik prac'),'[UPRAC]', ''),
-        (('Termin rozpoczęcia'),'[TERMIN_R]', ''),
-        (('Termin zakończenia'),'[TERMIN_Z]', ''),
+        (('Cel pracy'),'CEL', ''),
+        (('Wykonawca'),'WYKONAWCA', ''),
+        (('Kierownik'),'KIEROWNIK', ''),
+        (('Nr upr. kierownika'),'KIEROWNIK_UPR', ''),
+        (('Uczestnik prac'),'UPRAC', ''),
+        (('Termin rozpoczęcia'),'TERMIN_R', ''),
+        (('Termin zakończenia'),'TERMIN_Z', ''),
         ]
         self.df = pd.DataFrame(data, columns=["Name", "Tag", "Data"])
         return self.df
@@ -423,9 +451,73 @@ class DOCX(QMainWindow):
         self.settings.setValue("DefaultListTAG", False)
         print("Reset")
 
+
+    def context_menu(self, pos):
+        context_menu = QMenu(self)
+
+        copy_action = context_menu.addAction("Kopiuj")
+        copy_action.triggered.connect(self.copy_to_clipboard)
+
+        paste_action = context_menu.addAction("Wklej")
+        paste_action.triggered.connect(self.paste_from_clipboard)
+
+        context_menu.exec(QCursor.pos())
+
+    def copy_to_clipboard(self):
+        selection_model = self.table_view.selectionModel()
+        selected_indexes = selection_model.selectedIndexes()
+
+        if not selected_indexes:
+            print("No items selected.")
+            return
+
+        selected_indexes.sort(key=lambda x: (x.row(), x.column()))
+        
+        copied_data = ''
+        previous_row = selected_indexes[0].row()
+        for index in selected_indexes:
+            if index.row() != previous_row:
+                copied_data += '\n'
+                previous_row = index.row()
+
+            copied_data += self.table_view.model().data(index)
+            if index.column() < self.table_view.model().columnCount() - 1:
+                copied_data += '\t'  # Tab delimiter between columns
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(copied_data)
+
+        print("Copy data complete.")
+
+    def paste_from_clipboard(self):
+        clipboard = QApplication.clipboard()
+        text = clipboard.text()
+
+        if not text:
+            print("No data in clipboard.")
+            return
+
+        rows = text.split('\n')
+        data = [row.split('\t') for row in rows if row]
+
+        selection_model = self.table_view.selectionModel()
+        indexes = selection_model.selectedIndexes()
+
+        if not indexes:
+            QMessageBox.warning(self, "Paste Error", "Please select a starting cell.")
+            return
+
+        start_row = indexes[0].row()
+        start_col = indexes[0].column()
+
+        model = self.table_view.model()
+
+        for r, row_data in enumerate(data):
+            for c, value in enumerate(row_data):
+                model_index = model.index(start_row + r, start_col + c)
+                if model_index.isValid() and model.flags(model_index) & Qt.ItemIsEditable:
+                    model.setData(model_index, value)
+
+
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = DOCX()
-    window.resize(550, 650)
-    window.show()
-    sys.exit(app.exec())
+    pass
