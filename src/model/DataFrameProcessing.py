@@ -300,13 +300,13 @@ class myDataFrame(pd.DataFrame):
         try:
             df1 = cls.df_1.copy()
             df1['NR'] = df1['NR'] + przyrostek
-            df1['X'] += np.random.uniform(-0.07, 0.07, size=len(df1))
+            df1['X'] += np.random.uniform(-0.03, 0.04, size=len(df1))
             df1['X'] = df1['X'].astype(float).round(2)
-            df1['Y'] += np.random.uniform(-0.07, 0.07, size=len(df1))
+            df1['Y'] += np.random.uniform(-0.03, 0.04, size=len(df1))
             df1['Y'] = df1['Y'].astype(float).round(2)
             try:
                 if df1 is not None and not df1.empty and "H" in df1.columns:
-                    df1['H'] += np.random.uniform(-0.03, 0.07, size=len(df1))
+                    df1['H'] += np.random.uniform(-0.03, 0.04, size=len(df1))
                     df1['H'] = df1['H'].astype(float).round(2)
             except Exception as e:
                 print(e)
@@ -374,4 +374,28 @@ class myDataFrame(pd.DataFrame):
 
 
 if __name__ == "__main__":
-    pass
+    path = r""
+
+    myDataFrame.default()
+    myDataFrame.read(path, 'df_1')
+    myDataFrame.clean('df_1')
+    myDataFrame.set_float_and_name('df_1')
+
+    #myDataFrame.sort('df_1', 0)
+
+    #myDataFrame.create_new_data()
+    #myDataFrame.subtract()
+    
+    #print(myDataFrame.df_1)
+    #print('')
+    #print(myDataFrame.df_2)
+    #print('')
+    #print(myDataFrame.df_3)
+    #print('')
+
+    #myDataFrame.drop_H_in_df("df_all")
+    #myDataFrame.drop_columns_in_df("df_all", "H", "DH")
+    #myDataFrame.drop_columns_in_df("df_all", "SPD", "ISD", "STB")
+
+    myDataFrame.display_data()
+    print(myDataFrame.df_all)

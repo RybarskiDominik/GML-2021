@@ -117,5 +117,34 @@ def select_folder_and_process(path_to_docx=None, output_folder=None, data=None):
 
 
 if __name__ == "__main__":
-    pass
+    app = QApplication(sys.argv)
+
+    path = os.path.join(sys.path[0], 'test.docx')
+    path_out = os.path.join(sys.path[0], 'Out.docx')
+
+    data = {'[NR_DZIALKI]': 'A',
+            '[IDENTYFIKATOR]': 'B',
+            '[WOJ]': 'C',
+            '[POW]': 'D',
+            '[JEWID]': 'E',
+            '[JEWID_ID]': 'F',
+            '[OBR]': 'G',
+            '[OBR_ID]': 'H',
+            '[ARKUSZ]': 'I',
+            '[DATA_OKLADKA]': 'J',
+            '[DATA_SPIS]': 'K',
+            '[DATA_SPR]': 'L',
+            '[DATA]': 'M',
+            '[CEL]': 'N',
+            '[WYKONAWCA]': 'O',
+            '[KIEROWNIK]': 'P',
+            '[KIEROWNIK_UPR]': 'R',
+            '[UPRAC]': 'S',
+            '[TERMIN_R]': 'T',
+            '[TERMIN_Z]': 'U',
+            }
+    
+    inwestigation_docx(path, path_out, data)
+
+    #select_folder_and_process(data=data)
 

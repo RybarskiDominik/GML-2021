@@ -220,3 +220,113 @@ QScrollBar::sub-line:horizontal{
 QGroupBox {
     color: white;
     }
+
+
+/* === ProjectEditor: Dodatkowe style === */
+
+ProjectEditor QLabel {
+    color: #ffffff;
+    font-size: 13px;
+}
+
+ProjectEditor QTabWidget::pane {
+    border: 1px solid #4d4d4d;
+    background: #242424;
+    border-radius: 5px;
+    padding: 2px;
+}
+
+ProjectEditor QTabBar::tab {
+    background: #2e2e2e;
+    color: #ffffff;
+    padding: 6px 12px;
+    border: 1px solid #4d4d4d;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    margin-right: 2px;
+}
+
+ProjectEditor QTabBar::tab:selected {
+    background: #3a3a3a;
+    border-bottom: 1px solid #242424;
+    font-weight: bold;
+}
+
+ProjectEditor QTabBar::tab:hover {
+    background: #333333;
+}
+
+ProjectEditor QTextEdit {
+    background-color: #2e2e2e;
+    border: 1px solid #4d4d4d;
+    border-radius: 5px;
+    color: #ffffff;
+    padding: 3px;
+}
+
+ProjectEditor QDateEdit {
+    background-color: #2e2e2e;
+    border: 1px solid #4d4d4d;
+    border-radius: 5px;
+    color: #ffffff;
+    padding: 2px 4px;
+}
+
+ProjectEditor QDateEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #4d4d4d;
+}
+
+ProjectEditor QDateEdit::down-arrow {
+    image: url(gui/Stylesheets/images_dark-light/Calendar-light.svg);
+    width: 12px;
+    height: 12px;
+}
+
+ProjectEditor QTableWidget {
+    background-color: #242424;
+    gridline-color: #4d4d4d;
+    border: none;
+    color: #ffffff;
+}
+
+ProjectEditor QTableWidget::item:selected {
+    background-color: #3a3a3a;
+    color: #ffffff;
+}
+
+ProjectEditor QHeaderView::section {
+    background-color: #2e2e2e;
+    color: #ffffff;
+    border: 1px solid #4d4d4d;
+    padding: 4px;
+}
+
+
+
+
+/* ===== Dark QMessageBox ===== */
+QMessageBox {
+    background-color: #242424;
+    color: #ffffff;
+    border: 1px solid #4d4d4d;
+}
+
+QMessageBox QLabel {
+    color: #ffffff;
+}
+
+QMessageBox QPushButton {
+    background-color: #2e2e2e;
+    color: #ffffff;
+    border: 1px solid #4d4d4d;
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+
+QMessageBox QPushButton:hover {
+    background-color: #3a3a3a;
+    border: 1px solid #5a5a5a;
+}

@@ -1,25 +1,24 @@
 from PySide6.QtWidgets import QMessageBox, QApplication, QInputDialog
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Signal, QObject
+from datetime import datetime
 from pathlib import Path
+import platform
 import tempfile
 import logging
 import shutil
 import sys
 import os
 
-
 logger = logging.getLogger(__name__)
 settings = QSettings('File', 'File Manager')
 
-
-import sys
-import tempfile
-import platform
-from pathlib import Path
+DB_FILE = "DATABASE.db"
 
 
-class FileManager:
+class FileManager(QObject):
+    path_changed = Signal()
     def __init__(self):
+        super().__init__()
         self.workspace_folder_name = "Obszar_roboczy"
 
         self.base_path = self._determine_base_path()
@@ -30,13 +29,21 @@ class FileManager:
             self.current_workspace_dir = Path(saved_workspace_path).expanduser().resolve()
             logger.info(f"Załadowano zapisany obszar roboczy: {self.current_workspace_dir}")
             #print(f"Załadowano zapisany obszar roboczy: {self.current_workspace_dir}")
+
+            if not self.current_workspace_dir.drive or not self.current_workspace_dir.exists():
+                self.current_workspace_dir = self.default_workspace_root_dir / self.workspace_folder_name
+                logger.info(f"Z powodu błędnej ścieżki użyto domyślnego obszaru roboczego: {self.current_workspace_dir}")
+
         else:
             self.current_workspace_dir = self.default_workspace_root_dir / self.workspace_folder_name
             logger.info(f"Użyto domyślnego obszaru roboczego: {self.current_workspace_dir}")
             #print(f"Użyto domyślnego obszaru roboczego: {self.current_workspace_dir}")
 
         self._set_base_app_path()
+        self._set_database_path()
         self._set_base_workspace_root_dir()
+
+        self.check_workspace_structure()
 
     def _determine_base_path(self) -> Path:
         if getattr(sys, 'frozen', False):
@@ -60,6 +67,15 @@ class FileManager:
         else:  # Linux and other Unix-like OS
             return Path.home() / ".local" / "share" / "GMLReader"
 
+    def _set_database_path(self):
+        saved_db_path = settings.value("database_folder_path", type=str)
+        if saved_db_path:
+            self.database_folder_path = Path(saved_db_path).expanduser().resolve()
+            logger.info(f"Załadowano zapisany plik bazy danych: {self.database_folder_path}")
+        else:
+            self.database_folder_path = self.base_path
+            logger.info(f"Użyto domyślnej bazy danych: {self.database_folder_path}")
+
     def _set_base_app_path(self):
         self.icons_path = self.default_workspace_root_dir / 'Icons'
         self.log_file_path = self.default_workspace_root_dir / "log.log"
@@ -69,53 +85,48 @@ class FileManager:
     def _set_base_workspace_root_dir(self):
         self.current_workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        saved_docx_path = settings.value("templates_folder_path ", type=str)
+        saved_docx_path = settings.value("templates_folder_path", type=str)
         if saved_docx_path:
             self.templates_folder_path  = Path(saved_docx_path).expanduser().resolve()
+            if not self.templates_folder_path.drive or not self.templates_folder_path.exists():
+                self.templates_folder_path  = self.current_workspace_dir / "Formatki"
         else:
             self.templates_folder_path  = self.current_workspace_dir / "Formatki"
 
         self.templates_notification_folder_path = self.templates_folder_path  / "Zawiadomienia"
-        self.operaty_folder_path = self.current_workspace_dir / "Operaty"
+        self.projects_folder_path = self.current_workspace_dir / "Projekty"
         self.gml_folder_path = self.current_workspace_dir / "GML"
 
         self.gml_file_path = self.gml_folder_path / "Parsed_GML.gml"
         self.data_base_file_path = self.gml_folder_path / "GML_DataBase.pkl"
         self.xlsx_target_path = self.gml_folder_path / "GML.xlsx"
-        
-        self.check_workspace_structure()
 
 
     def check_workspace_structure(self):
-        """Ensure the workspace folder structure exists."""
-        folders_to_create = [
-            (self.operaty_folder_path, "Operaty"),
-            (self.gml_folder_path, "GML"),
-            (self.templates_folder_path , "Formatki")
+        """Tworzy wszystkie wymagane katalogi."""
+        folders = [
+            self.projects_folder_path,
+            self.gml_folder_path,
+            self.templates_folder_path,
+            self.templates_notification_folder_path,
+            self.database_folder_path
         ]
 
-        for folder_path, folder_name in folders_to_create: # mainfolders
-            try:
-                folder_path.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"Folder {folder_name} istnieje lub został utworzony: {folder_path}")
-            except Exception as e:
-                logging.exception(e)
-        
-        try: # subfolders
-            self.templates_folder_path .mkdir(parents=True, exist_ok=True)
-            self.templates_notification_folder_path.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logging.exception(e)
+        subfolders = [
+            'Budynek', 'MDCP', 'Podział', 'Wznowienie-Wyznaczenie-Ustalenie'
+        ]
 
-        
-        try: # subfolders
-            subfolders = ['Budynek', 'MDCP', 'Podział', 'Wznowienie-Wyznaczenie-Ustalenie']
-            for name in subfolders:
-                path = self.templates_folder_path  / name
-                path.mkdir(parents=True, exist_ok=True)
-                logger.debug(f"Podfolder Formatki istnieje lub został utworzony: {path}")
-        except Exception as e:
-            logging.exception(e)
+        for folder in folders:
+            try:
+                folder.mkdir(parents=True, exist_ok=True)
+                #logger.debug(f"Utworzono lub istnieje: {folder}")
+            except Exception as e:
+                logger.exception(f"Błąd przy tworzeniu folderu: {folder} -> {e}")
+
+        for name in subfolders:
+            path = self.templates_folder_path / name
+            path.mkdir(parents=True, exist_ok=True)
+
 
     def _has_write_permissions(self, path: Path) -> bool:
         """Check if the directory is writable."""
@@ -129,8 +140,10 @@ class FileManager:
         except Exception:
             return False
 
-    def logger_info(self):
-        info_lines = [
+
+    def _format_info_lines(self) -> list:
+        """Common formatting for info display."""
+        return [
             "\n=== FileManager Info ===",
             f"Workspace folder name:          {self.workspace_folder_name}",
             f"Base application path:          {self.base_path}",
@@ -138,83 +151,84 @@ class FileManager:
             f"Icons directory:                {self.icons_path}",
             f"Log file path:                  {self.log_file_path}",
             f"Stylesheets folder:             {self.stylesheets_folder_path}",
-            f"Stylesheet images path:         {self.stylesheets_images_path}",
+            f"Stylesheet images path:         {self.stylesheets_path}",
             f"Current workspace directory:    {self.current_workspace_dir}",
             f"GML folder path:                {self.gml_folder_path}",
             f"Formatki folder path:           {self.templates_folder_path}",
             f"Formatki pow. folder path:      {self.templates_notification_folder_path}",
-            f"Operaty folder path:            {self.operaty_folder_path}",
+            f"Projekty folder path:           {self.projects_folder_path}",
             f"GML parsed file path:           {self.gml_file_path}",
             f"GML database file path:         {self.data_base_file_path}",
             f"GML Excel export path:          {self.xlsx_target_path}",
             "========================\n"
         ]
 
-        for line in info_lines:
+    def logger_info(self):
+        for line in self._format_info_lines():
             logger.info(line)
 
     def print_info(self):
         """Wyświetla informacje o konfiguracji FileManager."""
-        print("\n=== FileManager Information ===")
-        print()
-        print(f"Workspace folder name:          {self.workspace_folder_name}")
-        print()
-        print(f"Base application path:          {self.base_path}")
-        print(f"Default workspace root dir:     {self.default_workspace_root_dir}")
-        print()
-        print(f"Icons directory:                {self.icons_path}")
-        print(f"Log file path:                  {self.log_file_path}")
-        print(f"Stylesheets folder:             {self.stylesheets_folder_path}")
-        print(f"Stylesheet images path:         {self.stylesheets_path}")
-        print()
-        print(f"Current workspace directory:    {self.current_workspace_dir}")
-        print()
-        print(f"GML folder path:                {self.gml_folder_path}")
-        print(f"Formatki folder path:           {self.templates_folder_path }")
-        print(f"Formatki pow. folder path:      {self.templates_notification_folder_path }")
-        print(f"Operaty folder path:            {self.operaty_folder_path}")
-        print(f"GML parsed file path:           {self.gml_file_path}")
-        print(f"GML database file path:         {self.data_base_file_path}")
-        print(f"GML Excel export path:          {self.xlsx_target_path}")
-        print("===================================\n")
+        print("\n".join(self._format_info_lines()))
 
+
+    def _update_paths_and_structure(self):
+        """Update paths and recreate folder structure."""
+        self._set_base_workspace_root_dir()
+        self.check_workspace_structure()
+        self.path_changed.emit()
 
     def set_custom_docx_path(self, path: Path):
         path = Path(path).expanduser().resolve()
-        self.templates_folder_path  = path
-        self.templates_notification_folder_path = self.templates_folder_path  / "Zawiadomienia"
+        self.templates_folder_path = path
+        self.templates_notification_folder_path = self.templates_folder_path / "Zawiadomienia"
+        settings.setValue("templates_folder_path", str(self.templates_folder_path))
+        logger.info(f"Zmieniono ścieżkę do bazy danych na: {self.templates_folder_path}")
 
-        settings.setValue("templates_folder_path ", str(self.templates_folder_path ))
-        self.check_workspace_structure()
+        self._update_paths_and_structure()
 
     def reset_docx_path(self):
-        settings.remove("templates_folder_path ")
-        self.templates_folder_path  = self.current_workspace_dir / "Formatki"
-        self.templates_notification_folder_path = self.templates_folder_path  / "Zawiadomienia"
+        settings.remove("templates_folder_path")
+        self.current_workspace_dir = self.default_workspace_root_dir / self.workspace_folder_name
+        self.templates_folder_path = self.current_workspace_dir / "Formatki"
+        self.templates_notification_folder_path = self.templates_folder_path / "Zawiadomienia"
 
-        self.templates_folder_path .mkdir(parents=True, exist_ok=True)
+        self.templates_folder_path.mkdir(parents=True, exist_ok=True)
         self.templates_notification_folder_path.mkdir(parents=True, exist_ok=True)
 
-        settings.setValue("templates_folder_path ", str(self.templates_folder_path ))
-        self.check_workspace_structure()
+        #settings.setValue("templates_folder_path", str(self.templates_folder_path))
+        self._update_paths_and_structure()
+
+    def set_custom_database_path(self, path: Path):
+        path = Path(path).expanduser().resolve()
+        self.database_folder_path = path
+        settings.setValue("database_folder_path", str(path))
+        logger.info(f"Zmieniono ścieżkę do bazy danych na: {path}")
+        self._update_paths_and_structure()
+
+    def reset_database_path(self):
+        settings.remove("database_folder_path")
+        self.database_folder_path = self.default_workspace_root_dir
+        logger.info(f"Zresetowano ścieżkę bazy danych do domyślnej: {self.database_folder_path}")
+        self._update_paths_and_structure()
 
     def set_new_workspace_path(self, path: Path):
-        """Zmień ścieżkę do obszaru roboczego i zapisz ją w ustawieniach."""
         path = Path(path).expanduser().resolve()
-        self.current_workspace_dir = path
         settings.setValue("workspace_path", str(path))
-        logger.info(f"Zmieniono obszar roboczy na: {self.current_workspace_dir}")
-        self._set_base_workspace_root_dir()
+        self.current_workspace_dir = path
+        logger.info(f"Zmieniono obszar roboczy: {path}")
+
+        self._update_paths_and_structure()
 
     def reset_workspace_path(self):
-        """Resetuje ścieżkę do domyślnego obszaru roboczego i usuwa zapisany path."""
-        settings.remove("workspace_path")  # Usuwa zapisany path
-        logger.info(f"Zresetowano obszar roboczy do: {self.current_workspace_dir}")
+        settings.remove("workspace_path")
         self.current_workspace_dir = self.default_workspace_root_dir / self.workspace_folder_name
-        self._set_base_workspace_root_dir()
+        logger.info(f"Przywrócono domyślny obszar roboczy: {self.current_workspace_dir}")
+        self._update_paths_and_structure()
+
 
     def move_workspace_path(self, new_path: Path):
-        """Przenosi dane ze starego workspace do nowego, pytając o kolizje przez GUI."""
+        """Move workspace data to new location with conflict resolution."""
         old_workspace_dir = self.current_workspace_dir
         if not new_path or old_workspace_dir == Path(new_path).expanduser().resolve():
             return
@@ -274,6 +288,50 @@ class FileManager:
 
         settings.setValue("workspace_path", str(new_workspace_dir))
         logger.info(f"Zmieniono obszar roboczy na: {new_workspace_dir}")
+
+    def rename_folder(self, project_name: str, path_to_project: Path, old_project_name: str) -> bool:
+        try:
+            old_path = path_to_project / old_project_name
+            new_path = path_to_project / project_name
+
+            if not old_path.exists():
+                print(f"Folder '{old_project_name}' does not exist.")
+                return False
+
+            if new_path.exists():
+                print(f"A folder named '{project_name}' already exists.")
+                return False
+
+            old_path.rename(new_path)
+            return True
+
+        except Exception as e:
+            print(f"Error renaming folder: {e}")
+            return False
+
+    def create_folder(self, folder_name: str, path: Path = None) -> bool:
+        target = path / folder_name
+
+        if not target.exists():
+            target.mkdir(parents=True, exist_ok=False)
+            print(f"Utworzono folder: {target}")
+            return True
+        else:
+            print(f"Folder już istnieje: {target}")
+            return False
+        
+    def copy_file_to_directory(self, path_to_file: Path = None, target_path_for_file: Path = None):
+        try:
+            shutil.copy(path_to_file, target_path_for_file)
+            print(f"Plik został skopiowany do {target_path_for_file}.")
+            return True
+        except shutil.SameFileError:
+            print("Źródłowy i docelowy plik są takie same. Kopiowanie pominięto.")
+            return True
+        except Exception as e:
+            logging.exception(e)
+            print(f"Wystąpił błąd podczas kopiowania pliku: {str(e)}")
+            return False
 
 
     def _generate_unique_name(self, path: Path) -> Path:
@@ -388,7 +446,140 @@ class FileManager:
     def get_stylesheets_folder_path(self, icon_name):
         return str(self.stylesheets_folder_path / icon_name)
 
-#file_manager = FileManager()
+
+    def backup_workspace(self, backup_root: Path = None) -> dict[str, Path]:
+        """
+        Tworzy kopię zapasową wszystkich głównych folderów workspace:
+        - Projekty
+        - GML
+        - Formatki
+        - Baza danych (jeśli plik istnieje)
+
+        backup_root: folder docelowy dla backupu. Domyślnie: workspace/Backups/YYYYMMDD_HHMMSS
+        Zwraca słownik {nazwa_folderu: Path_do_kopii}
+        """
+        backup_root = Path(backup_root) if backup_root else self.current_workspace_dir / "Backups"
+        #timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        backup_root = backup_root / f"Backup_{timestamp}"
+        backup_root.mkdir(parents=True, exist_ok=True)
+
+        backup_paths = {}
+
+        folders_to_backup = {
+            "Projekty": self.projects_folder_path,
+            "GML": self.gml_folder_path,
+            "Formatki": self.templates_folder_path,
+        }
+
+        """
+        for name, path in folders_to_backup.items():
+            if path.exists():
+                dest = backup_root / name
+                shutil.copytree(path, dest)
+                logger.info(f"Utworzono backup folderu {name}: {dest}")
+                backup_paths[name] = dest
+        """
+        
+        for name, path in folders_to_backup.items():
+            if path.exists():
+                # Skip copying backup folder into itself
+                if backup_root in path.parents:
+                    logger.warning(f"Pominięto folder {name}, aby uniknąć rekurencji")
+                    continue
+                
+                dest = backup_root / name
+                try:
+                    shutil.copytree(path, dest, dirs_exist_ok=True, symlinks=False)
+                    logger.info(f"Utworzono backup folderu {name}: {dest}")
+                    backup_paths[name] = dest
+                except Exception as e:
+                    logger.error(f"Nie udało się wykonać backupu folderu {name}: {e}")
+
+        # Kopia pliku bazy danych
+        self.db_file_path = self.database_folder_path / DB_FILE
+        if self.db_file_path.exists() and self.db_file_path.is_file():
+            db_backup_path = backup_root / self.db_file_path.name
+            shutil.copy2(self.db_file_path, db_backup_path)
+            logger.info(f"Utworzono backup bazy danych: {db_backup_path}")
+            backup_paths["Baza danych"] = db_backup_path
+
+        return backup_paths
+
+    def restore_backup(self, backup_path: Path, restore_folders: list[str] = None) -> dict[str, Path]:
+        """
+        Przywraca zawartość backupu do workspace.
+        backup_path: ścieżka do folderu backupu (np. workspace/Backups/Backup_20251026_150000)
+        restore_folders: lista folderów do przywrócenia ['Projekty', 'GML', 'Formatki', 'Baza danych'].
+                        Domyślnie przywraca wszystkie dostępne foldery.
+        Zwraca słownik {nazwa_folderu: Path_do_przywróconego_folderu}
+        """
+        backup_path = Path(backup_path)
+        if not backup_path.exists():
+            logger.warning(f"Backup nie istnieje: {backup_path}")
+            return {}
+
+        if restore_folders is None:
+            restore_folders = ['Projekty', 'GML', 'Formatki', 'Baza danych']
+
+        restored_paths = {}
+
+        # Mapowanie folderów backupu do ścieżek w FileManager
+        folder_map = {
+            "Projekty": self.projects_folder_path,
+            "GML": self.gml_folder_path,
+            "Formatki": self.templates_folder_path,
+            "Baza danych": self.database_folder_path,
+        }
+
+        for name in restore_folders:
+            src = backup_path / name
+            dest = folder_map.get(name)
+
+            if not src.exists() or dest is None:
+                logger.warning(f"Pominięto {name} – brak źródła lub ścieżki docelowej.")
+                continue
+
+            try:
+                if name == "Baza danych":
+                    # zawsze przywracamy konkretny plik DATABASE.db
+                    src_file = backup_path / DB_FILE
+                    if not src_file.exists():
+                        logger.warning(f"Brak pliku bazy danych w backupie: {src_file}")
+                        continue
+
+                    if dest.is_dir():
+                        db_dest = dest / DB_FILE
+                    else:
+                        db_dest = dest
+
+                    shutil.copy2(src_file, db_dest)
+                    restored_paths[name] = db_dest
+                    logger.info(f"Przywrócono bazę danych z backupu: {db_dest}")
+
+                else:
+                    # Przywracanie folderów
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(src, dest)
+                    restored_paths[name] = dest
+                    logger.info(f"Przywrócono {name} z backupu: {dest}")
+
+            except Exception as e:
+                logger.error(f"Błąd przy przywracaniu {name}: {e}")
+
+        return restored_paths
+
+
+file_manager = FileManager()
+
 
 if __name__ == '__main__':
-    pass
+        # Konfiguracja loggingu
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        
+        #manager = FileManager()
+        #manager.print_info()

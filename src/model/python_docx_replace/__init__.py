@@ -23,6 +23,7 @@ def docx_replace(doc, replacements: dict) -> None:
     """
     for key, value in replacements.items():
         key = f"$[{key}]"  # f"$[{key}]"
+        #key = f"${{{key}}}"
         for p in Paragraph.get_all(doc):
             paragraph = Paragraph(p)
             paragraph.replace_key(key, str(value))

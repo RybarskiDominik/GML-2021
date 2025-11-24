@@ -2,6 +2,7 @@ from PySide6.QtWidgets import QListWidget, QListWidgetItem, QVBoxLayout, QFrame
 from PySide6.QtCore import Qt, Signal
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 

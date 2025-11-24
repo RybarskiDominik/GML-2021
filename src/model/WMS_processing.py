@@ -217,7 +217,30 @@ class WMS_processing:
 
 
 if __name__ == '__main__':
-    pass
+
+    
+    # ['SkorowidzeOrtofotomapy2024', 'SkorowidzeOrtofotomapy2023', 'SkorowidzeOrtofotomapy2022', 'SkorowidzeOrtofotomapyStarsze', 'SkorowidzeOrtofotomapyZasiegi2024', 'SkorowidzeOrtofotomapyZasiegi2023', 'SkorowidzeOrtofotomapyZasiegi2022', 'SkorowidzeOrtofotomapyZasiegiStarsze']
+
+    ORTOFOTOMAPA_WMS_URL = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/SkorowidzeWgAktualnosci?"
+    LAYER_NAME = "SkorowidzeOrtofotomapy2022"
+    LAYER_NAME = "SkorowidzeOrtofotomapyStarsze"
+
+    url = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/SkorowidzeWgAktualnosci?SERVICE=WMS&REQUEST=GetCapabilities"
+
+    #x = 6580874.94
+    #y = 5486367.14
+    x=6581132.0
+    y=5486631.0
+
+    x=6581600.636633089
+    y=5487000.438177792
+
+    epsg = "EPSG::2177"
+    
+    gml = WMS_processing()
+    data = gml.get_raster_from_wms(ORTOFOTOMAPA_WMS_URL, x, y, epsg)
+    gml.repair_data(data)
+    gml.create_and_sort_df()
 
 
 

@@ -94,7 +94,7 @@ class DataFrameTableModel(QStandardItemModel):
 
 class ImportWin(QMainWindow):
     def __init__(self, win, tabela=None, dark_mode_enabled=None, path=False):
-        super().__init__()
+        super().__init__(win)
         self.win = win
         self.setWindowIcon(QIcon(r'gui\Stylesheets\WSP.ico'))
         self.setWindowTitle("Import punktów")
@@ -867,9 +867,14 @@ class Win_coordinate_comparison(QMainWindow):
     def closeEvent(self, event):
         try:
             self.import_win.close()
-        except AttributeError:
+        except Exception as e:
+            logging.exception(e)
+            print(e)
             return
 
 
 if __name__ == '__main__':
-    pass
+    app = QApplication(sys.argv)
+    window_wsp = Win_coordinate_comparison()
+    window_wsp.show()
+    sys.exit(app.exec())

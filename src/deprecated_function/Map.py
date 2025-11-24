@@ -20,7 +20,7 @@ from function.search_in_geoportal import open_parcel_in_geoportal
 from function.search_in_street_view import open_parcel_in_street_view
 from function.EPSG import read_EPSG
 
-from model.path import PathManager
+from FileManager.FileManager import file_manager
 
 import logging
 import math
@@ -29,7 +29,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-path_manager = PathManager()
+path_manager = file_manager
 
 if getattr(sys, 'frozen', False):
     path_icons = os.path.dirname(sys.executable) + '\\gui\\Icons\\'    
@@ -935,4 +935,43 @@ def overlap_polygons_auto(df_overlap_polygons):
 
 
 if __name__ == '__main__':
-    pass
+
+    logging.basicConfig(level=logging.NOTSET, filename="log.log", filemode="w", format="%(asctime)s - %(lineno)d - %(levelname)s - %(message)s") #INFO
+
+    app = QApplication( sys.argv )
+
+    def path():
+        path = QFileDialog.getOpenFileName(None, 'open file', os.path.expanduser("~/Desktop"), 'GML File(*.gml)')
+        return path[0]
+
+    path_to_map = r""
+    
+    if not path_to_map:
+        path_to_map = path()
+        if not path_to_map:
+            print("Możesz Wprowadzić path do pliku źrudłowego ręcznie, variable ---> \"path_to_map\".")
+            sys.exit()
+    
+    settings = QSettings('GML', 'GML Reader')
+    if settings.value('DarkMode', True, type=bool):
+        darkmode = 1
+    else:
+        darkmode = 0
+
+    try:
+        if darkmode != 1:
+            app.setStyleSheet("""
+            QGraphicsView {
+                border: none;
+                background: transparent;
+            }
+            """)
+        else:
+            app.setStyleSheet(Path('gui/Stylesheets/darkmode.qss').read_text())
+    except Exception as e:
+            logging.exception(e)
+            print(e)
+
+    MapWindow = WindowMap(path_to_map)
+    MapWindow.show()
+    sys.exit(app.exec())

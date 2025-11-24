@@ -9,7 +9,9 @@ selenium
 requests
 rasterio
 owslib
+odfdo
 bs4
+pikepdf
 
 #pip install -r Requirements.txt
 

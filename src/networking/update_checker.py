@@ -39,7 +39,7 @@ def check_app_update_status(app_manual_version=None):
 
     try:
         if latest_online_version:
-            latest_online_version  = version.parse(latest_online_version )
+            latest_online_version = version.parse(latest_online_version )
         file_version = version.parse(file_version)
     except Exception as e:
         logging.exception(e)
@@ -55,7 +55,7 @@ def check_app_update_status(app_manual_version=None):
         logging.debug("The installed version is outdated.")
         return True  # Installed version is outdated.
     elif latest_online_version < file_version:
-        logging.debug("The installed version is up to date.")
+        logging.debug("The installed version is newer than the version available online.")
         return False  # Installed version is up to date.
     else:
         logging.debug("Error: app version check")

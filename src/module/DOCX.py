@@ -4,15 +4,18 @@ from PySide6.QtWidgets import (
     QLabel, QHeaderView, QFileDialog, QComboBox, QSpacerItem,
     QSizePolicy, QMenu
 )
-from PySide6.QtGui import QStandardItem, QStandardItemModel, QCursor
-from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtGui import QStandardItem, QStandardItemModel, QCursor, QDesktopServices
+from PySide6.QtCore import QSettings, Qt, Signal, QUrl
+from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6 import QtCore
-from model.DOCX_processing import select_folder_and_process
-from function.FileMenager import FileManager
-file_management = FileManager()
-import pandas as pd
 
 import os, sys, json, logging
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from model.DOCX_processing import select_folder_and_process
+from FileManager.FileManager import file_manager
+#file_manager = FileManager()
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +37,7 @@ class DataFrameTableModel(QStandardItemModel):
     def update_view(self):
         """Synchronize the view with the DataFrame."""
         if self._df is None:
-            self._df = pd.DataFrame(columns=['Name', 'Tag', 'Data'])
+            self._df = pd.DataFrame(columns=['Tag', 'Data'])
 
         self.clear()
         self.setHorizontalHeaderLabels(self._df.columns.tolist())
@@ -67,14 +70,14 @@ class DataFrameTableModel(QStandardItemModel):
         else:
             QMessageBox.warning(None, "Error", "No more changes to undo.")
 
-    def add_row(self, name, tag):
+    def add_row(self, tag):
         """Add a new tag to the table."""
 
         if tag in self._df["Tag"].values:
             QMessageBox.warning(None, "Error", f"Tag '{tag}' already exists.")
             return
 
-        new_row = pd.DataFrame([[name, tag, ""]], columns=self._df.columns)
+        new_row = pd.DataFrame([[tag, ""]], columns=self._df.columns)
         self._df = pd.concat([self._df, new_row], ignore_index=True)
         self.add_to_history_flag = True
         self.update_view()
@@ -121,7 +124,7 @@ class DataFrameTableModel(QStandardItemModel):
     def flags(self, index):
         """Override to make the first column non-editable."""
         
-        if index.column() == 0 or index.column() == 1:
+        if index.column() == 0:
             return Qt.ItemIsEnabled | Qt.ItemIsSelectable  # Disable editing for the first column
         else:
             return super().flags(index)  # Keep default behavior for other columns
@@ -131,8 +134,7 @@ class DataFrameTableModel(QStandardItemModel):
         header = table_view.horizontalHeader()
 
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Resize first column (Tag) to fit contents
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Resize first column (Tag) to fit contents
-        header.setSectionResizeMode(2, QHeaderView.Stretch)  # Stretch second column (Data) to take the remaining space
+        header.setSectionResizeMode(1, QHeaderView.Stretch)  # Resize first column (Tag) to fit contents
 
     def get_dataframe(self):
         """Return the current DataFrame."""
@@ -141,11 +143,25 @@ class DataFrameTableModel(QStandardItemModel):
     def send_dictionary(self):
         df = self.get_dataframe()
         dictionaries = {}
-        for _, row in df.iterrows():
-            dictionaries[row.iloc[1]] = row.iloc[2]
+        for _, row in df.iterrows():   # _ = index, row = Series
+            dictionaries[row["Tag"]] = row["Data"]
         self.send_dict.emit(dictionaries)
-        #print(dictionaries)
         return dictionaries
+
+    def update_from_dict(self, data_dict: dict):
+        """Zaktualizuj tabelę na podstawie słownika {Tag: Data}, nadpisując całość."""
+        rows = []
+        for tag, value in data_dict.items():
+            rows.append([tag, value])   # tylko Tag i Data
+        self._df = pd.DataFrame(rows, columns=["Tag", "Data"])
+
+        # Reset historii i dodanie nowego stanu
+        self.history.clear()
+        self.add_to_history()
+
+        # Odśwież widok
+        self.update_view()
+
 
 class DOCX(QMainWindow):
     def __init__(self, Path=None):
@@ -154,15 +170,18 @@ class DOCX(QMainWindow):
         self.resize(650, 735)
         self.setBaseSize(650, 735)
 
-        self.Path = file_management.templates_folder_path
+        self.Path = file_manager.templates_folder_path
+        file_manager.path_changed.connect(self.set_folder_name_in_QComboBox)
+        
         self.setWindowTitle("Tag Data Manager")
 
         self.df = pd.DataFrame()
         self.settings = QSettings('GML', 'GML Reader')
+        self.dark_mode_enabled = self.settings.value('DarkMode', False, type=bool)
 
         if self.settings.value('DefaultListTAG', None, type=bool) == True:
             data = self.settings.value('ListTAG')
-            self.df = pd.DataFrame(data, columns=["Name", "Tag", "Data"])
+            self.df = pd.DataFrame(data, columns=["Tag", "Data"])
         else:
             self.df = self.default_list()
 
@@ -178,12 +197,31 @@ class DOCX(QMainWindow):
         self.main_docx_path.addItem("Select path to docx files")  # Add default item
         self.main_docx_path.setToolTip("Folder nadrzędny, w którym są umieszczone foldery podrzędne z plikami *.DOCX")
         
+        """
         if self.settings.value('DocxPath') is not None:
             self.Path = self.settings.value('DocxPath')
             self.set_folder_name_in_QComboBox(self.Path)
         elif self.Path is not None:
-            self.set_folder_name_in_QComboBox(self.Path)
+        """
 
+        self.set_folder_name_in_QComboBox()
+
+        self.add_file = QPushButton(self)
+        #self.add_file.setText("Formatki++")
+        self.add_file.setFixedWidth(25)
+        self.add_file.setFixedHeight(25)
+        self.add_file.setToolTip("Dodaj formatki *.DOCX")
+        #self.add_file.clicked.connect(self.set_folder_name_in_QComboBox(self.Path))
+        self.add_file.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(file_manager.templates_folder_path)))
+
+        self.refresh_button = QPushButton(self)
+        #self.refresh_button.setText("Odśwież")
+        self.refresh_button.setFixedWidth(25)
+        self.refresh_button.setFixedHeight(25)
+        self.refresh_button.clicked.connect(lambda: self.set_folder_name_in_QComboBox)
+        self.refresh_button.setToolTip("Odśwież listę folderów")
+        
+        """
         self.edit_main_docx_path = QPushButton("DOCX")
         #self.edit_main_docx_path.setFixedHeight(26)
         self.edit_main_docx_path.setFixedWidth(45)
@@ -195,6 +233,7 @@ class DOCX(QMainWindow):
         self.reset_main_docx_path.setFixedWidth(40)
         self.reset_main_docx_path.setToolTip("Resetuje ścieżkę do plików *.DOCX")
         self.reset_main_docx_path.clicked.connect(self.reset_path)
+        """
 
         self.import_button = QPushButton("Import")
         self.import_button.setFixedWidth(50)
@@ -231,8 +270,11 @@ class DOCX(QMainWindow):
         
         input_layout = QHBoxLayout()
         input_layout.addWidget(self.main_docx_path)
-        input_layout.addWidget(self.edit_main_docx_path)
-        input_layout.addWidget(self.reset_main_docx_path)
+        input_layout.addWidget(self.add_file)
+        input_layout.addWidget(self.refresh_button)
+        #input_layout.addSpacerItem(QSpacerItem(5, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
+        #input_layout.addWidget(self.edit_main_docx_path)
+        #input_layout.addWidget(self.reset_main_docx_path)
         input_layout.addSpacerItem(QSpacerItem(5, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
         input_layout.addStretch(1)
         input_layout.addWidget(self.import_button)
@@ -256,6 +298,7 @@ class DOCX(QMainWindow):
 
         self.table_view = QTableView()
         self.table_view.setModel(self.table_model)
+        #self.table_view.setColumnHidden(0, True)
         #self.table_view.setEditTriggers(QTableView.DoubleClicked)
         self.table_view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self.context_menu)
@@ -264,8 +307,8 @@ class DOCX(QMainWindow):
         layout.addWidget(self.table_view)
 
 
-        self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("Enter new Name")
+        #self.name_input = QLineEdit()
+        #self.name_input.setPlaceholderText("Enter new Name")
         self.tag_input = QLineEdit()
         self.tag_input.setPlaceholderText("Enter new tag")
         self.add_button = QPushButton("Add Tag")
@@ -274,7 +317,7 @@ class DOCX(QMainWindow):
         self.remove_button.clicked.connect(self.remove_tag)
 
         input_layout = QHBoxLayout()
-        input_layout.addWidget(self.name_input)
+        #input_layout.addWidget(self.name_input)
         input_layout.addWidget(self.tag_input)
         input_layout.addWidget(self.add_button)
         input_layout.addWidget(self.remove_button)
@@ -284,11 +327,32 @@ class DOCX(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
         self.table_model.resize_columns(self.table_view)
+        self._setup_icons()
 
-    def set_folder_name_in_QComboBox(self, path_to_folder):
+    def _setup_icons(self):
+        """Konfiguruje wszystkie ikony na podstawie motywu."""
+        icon_size = QtCore.QSize(22, 22)
+        
+        # Mapa ikon z ich rozmiarami
+        icons_config = [
+            (self.add_file, "Folder", icon_size),
+            (self.refresh_button, "Refresh", icon_size),
+        ]
+        
+        # Ustaw ikony dla wszystkich przycisków
+        for button, icon_name, size in icons_config:
+            icon_path = file_manager.get_icon_path(icon_name, self.dark_mode_enabled)
+            button.setIcon(QtGui.QIcon(icon_path))
+            button.setIconSize(size)
+
+    def set_folder_name_in_QComboBox(self):
+        #print("Setting folder names in QComboBox:", file_manager.templates_folder_path)
+
+        path_to_folder = file_manager.templates_folder_path
+
         # Clear the QComboBox
         self.main_docx_path.clear()
-        
+
         # Check if the path exists and is a directory
         if os.path.isdir(path_to_folder):
             # Get a list of all subfolders in the path
@@ -321,23 +385,19 @@ class DOCX(QMainWindow):
         self.set_folder_name_in_QComboBox(path_to_folder)
 
     def reset_path(self):
-        self.Path = file_management.templates_folder_path
+        self.Path = file_manager.templates_folder_path
         self.settings.setValue("DocxPath", self.Path)
         self.main_docx_path.clear()
         self.set_folder_name_in_QComboBox(self.Path)
 
     def add_tag(self):
-        """Handle adding a new tag."""
-        name = self.name_input.text().strip()
         tag = self.tag_input.text().strip()
         if not tag:
             QMessageBox.warning(self, "Error", "Tag cannot be empty.")
             return
 
-        self.table_model.add_row(name ,tag)
+        self.table_model.add_row(tag)
         self.table_model.resize_columns(self.table_view)
-
-        self.name_input.clear()
         self.tag_input.clear()
 
     def remove_tag(self):
@@ -363,83 +423,103 @@ class DOCX(QMainWindow):
         self.df = self.table_model.get_dataframe()
         dictionaries = {}
         for _, row in self.df.iterrows():
-            dictionaries[row.iloc[1]] = row.iloc[2]
-        
+            dictionaries[row["Tag"]] = row["Data"]
+        print(dictionaries)
         result = select_folder_and_process(path_to_docx=path, data=dictionaries)
         if result == 0:
             logging.error("ERROR on modify docx.")
 
+
     def import_dict(self):
-        """Import a dictionary and update the table model."""
         file_name, _ = QFileDialog.getOpenFileName(self, "Open Dictionary File", "", "JSON Files (*.json);;All Files (*)")
         if not file_name:
             return
 
-      
         with open(file_name, "r", encoding="utf-8") as f:
             imported_data = json.load(f)
 
-        # Create a DataFrame from the imported data
-        new_data = [(entry.get("Name", ""), entry.get("Tag", ""), entry.get("Data", "")) for entry in imported_data]
-        self.df = pd.DataFrame(new_data, columns=["Name", "Tag", "Data"])
+        new_data = [(entry.get("Tag", ""), entry.get("Data", "")) for entry in imported_data]
+        self.df = pd.DataFrame(new_data, columns=["Tag", "Data"])
         self.table_model._df = self.df
         self.table_model.update_view()
-        
         self.table_model.resize_columns(self.table_view)
 
+
     def export_dict(self):
-        """Export the current data to a JSON file."""
         file_name, _ = QFileDialog.getSaveFileName(self, "Save Dictionary File", "", "JSON Files (*.json);;All Files (*)")
         if not file_name:
             return
 
         try:
             self.df = self.table_model.get_dataframe()
-            data_list = [{"Name": row["Name"], "Tag": row["Tag"], "Data": row["Data"]} for _, row in self.df.iterrows()]
+            data_list = [{"Tag": row["Tag"], "Data": row["Data"]} for _, row in self.df.iterrows()]
 
-            with open(file_name, "w", encoding="utf-8") as f:  # Save the data to a file
+            with open(file_name, "w", encoding="utf-8") as f:
                 json.dump(data_list, f, ensure_ascii=False, indent=4)
 
         except Exception as e:
             logging.exception(e)
-            print(e)
             QMessageBox.warning(self, "Error", f"Failed to export dictionary: {e}")
 
     def save_list(self):
         self.df = self.table_model.get_dataframe()
-        data_list = [{"Name": row["Name"], "Tag": row["Tag"], "Data": row["Data"]} for _, row in self.df.iterrows()]
+        data_list = [{"Tag": row["Tag"], "Data": row["Data"]} for _, row in self.df.iterrows()]
+        #print(data_list)
         self.settings.setValue("DefaultListTAG", True)
         self.settings.setValue("ListTAG", data_list)
 
+
     def default_list(self):
         data = [
-        (('Numer działki'),'NR_DZIALKI', ''),
-        (('KW'),'KW', ''),
-        (('Identyfikator'),'IDENTYFIKATOR', ''),
-        
-        (('Województwo'),'WOJ', ''),
-        (('Powiat'),'POW', ''),
-        (('Jed. ewid.'),'JEWID', ''),
-        (("ID Jed. ewid."),'JEWID_ID', ''),
-        (("Obręb"),'OBR', ''),
-        (("ID Obrębu"),'OBR_ID', ''),
+            ('Numer działki', ''),
+            ('KW', ''),
+            ('Identyfikator', ''),
+            
+            ('Województwo', ''),
+            ('Powiat', ''),
+            ('Jed. ewid.', ''),
+            ("ID Jed. ewid.", ''),
+            ("Obręb", ''),
+            ("ID Obrębu", ''),
 
-        (('Arkusz'),'ARKUSZ', ''), 
-        (('Punkt osnowy nr 1'),'OSN1', ''), 
-        (('Punkt osnowy nr 2'),'OSN2', ''), 
+            ('Arkusz', ''), 
+            ('Punkt osnowy nr 1', ''), 
+            ('Punkt osnowy nr 2', ''), 
 
-        (('Data sporządzenia'),'DATA', ''),
-        #(('Data z czynności'),'DATA_C', ''),
-
-        (('Cel pracy'),'CEL', ''),
-        (('Wykonawca'),'WYKONAWCA', ''),
-        (('Kierownik'),'KIEROWNIK', ''),
-        (('Nr upr. kierownika'),'KIEROWNIK_UPR', ''),
-        (('Uczestnik prac'),'UPRAC', ''),
-        (('Termin rozpoczęcia'),'TERMIN_R', ''),
-        (('Termin zakończenia'),'TERMIN_Z', ''),
+            ('Data sporządzenia', ''),
+            ('Cel pracy', ''),
+            ('Wykonawca', ''),
+            ('Kierownik', ''),
+            ('Nr upr. kierownika', ''),
+            ('Uczestnik prac', ''),
+            ('Termin rozpoczęcia', ''),
+            ('Termin zakończenia', ''),
         ]
-        self.df = pd.DataFrame(data, columns=["Name", "Tag", "Data"])
+        self.df = pd.DataFrame(data, columns=["Tag", "Data"])
+        return self.df
+
+    def default_list_old(self):
+        data = [
+            ('Identyfikator', ''),
+            ('Cel pracy', ''),
+            ('Opis', ''),
+            ('Termin rozpoczęcia', ''),
+            ('Termin zakończenia', ''),
+            ('Numer działki', ''),
+            ('KW', ''),
+            ('Województwo', ''),
+            ('Powiat', ''),
+            ('Jed. ewid.', ''),
+            ("ID Jed. ewid.", ''),
+            ("Obręb", ''),
+            ("ID Obrębu", ''),
+            ('Arkusz', ''), 
+            ('Punkt osnowy nr 1', ''), 
+            ('Punkt osnowy nr 2', ''), 
+            ('Data sporządzenia', ''),
+            ('Data zawiadomienia', ''),
+        ]
+        self.df = pd.DataFrame(data, columns=["Tag", "Data"])
         return self.df
 
     def reset_list(self):
@@ -520,4 +600,41 @@ class DOCX(QMainWindow):
 
 
 if __name__ == "__main__":
-    pass
+    app = QApplication(sys.argv)
+    window = DOCX()
+    window.resize(550, 650)
+    window.show()
+    sys.exit(app.exec())
+
+
+    """
+    def default_list(self):
+        data = [
+        (('Numer działki'),'[NR_DZIALKI]', ''),
+        (('Identyfikator'),'[IDENTYFIKATOR]', ''),
+        
+        (('Województwo'),'[WOJ]', ''),
+        (('Powiat'),'[POW]', ''),
+        (('Jed. ewid.'),'[JEWID]', ''),
+        (("ID Jed. ewid."),'[JEWID_ID]', ''),
+        (("Obręb"),'[OBR]', ''),
+        (("ID Obrębu"),'[OBR_ID]', ''),
+
+        (('Arkusz'),'[ARKUSZ]', ''), 
+        (('Punkt osnowy nr 1'),'[OSN1]', ''), 
+        (('Punkt osnowy nr 2'),'[OSN2]', ''), 
+
+        (('Data na okładce'),'[DATA_OKLADKA]', ''),
+        (('Data w spisie treści'),'[DATA_SPIS]', ''),
+        (('Data w sprawozdaniu'),'[DATA_SPR]', ''),
+        (('Data'),'[DATA]', ''),
+
+        (('Cel pracy'),'[CEL]', ''),
+        (('Wykonawca'),'[WYKONAWCA]', ''),
+        (('Kierownik'),'[KIEROWNIK]', ''),
+        (('Nr upr. kierownika'),'[KIEROWNIK_UPR]', ''),
+        (('Uczestnik prac'),'[UPRAC]', ''),
+        (('Termin rozpoczęcia'),'[TERMIN_R]', ''),
+        (('Termin zakończenia'),'[TERMIN_Z]', ''),
+        ]
+    """

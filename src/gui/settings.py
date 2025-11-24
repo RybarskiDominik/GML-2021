@@ -4,14 +4,18 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QCheckBox,
 from PySide6.QtCore import Qt,QRect, QSettings, QCoreApplication
 from PySide6.QtGui import QIcon
 from PySide6 import QtWidgets
-
-from networking.update_checker import check_app_update_status
-
 from pathlib import Path
 import logging
 import sys
 import os
 
+#sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from networking.update_checker import check_app_update_status
+from FileManager.workspace_settings_window import WorkspaceSettingsWindow
+from FileManager.FileManager import file_manager
+
+logger = logging.getLogger(__name__)
 
 class SettingsWindow(QMainWindow):
     def __init__(self, parent=None, dark_mode_enabled=None, version=None):
@@ -63,7 +67,11 @@ class SettingsWindow(QMainWindow):
         group_map.setGeometry(5, 160, 190, 200)
 
         group_points = QGroupBox("Punkty", self)
-        group_points.setGeometry(200, 160, 145, 165)
+        group_points.setGeometry(200, 160, 145, 135)
+
+        self.button_path_update = QtWidgets.QPushButton('Ścieżki programu', self)
+        self.button_path_update.setGeometry(200, 300, 145, 28)
+        self.button_path_update.clicked.connect(self.change_path_settings)
 
         self.button_check_update = QtWidgets.QPushButton('Check Update', self)
         self.button_check_update.setGeometry(200, 330, 145, 28)
@@ -76,12 +84,12 @@ class SettingsWindow(QMainWindow):
         self.last_gml.setToolTip("Wyłącz wczytywanie ostatniego GML na starcie programu.")
 
         self.strip_gml = QCheckBox('Skróć id w GML', self)
-        if self.settings.value('StripID', False, type=bool) == True:
+        if self.settings.value('StripID', True, type=bool) == True:
             self.strip_gml.setChecked(True)
         self.strip_gml.setToolTip("Skraca id w GML.")
 
         self.short_owner_addr = QCheckBox('Łącz (właściciele/adresu)', self)
-        if self.settings.value('ShortOwnerAddr', False, type=bool) == True:
+        if self.settings.value('ShortOwnerAddr', True, type=bool) == True:
             self.short_owner_addr.setChecked(True)
         self.short_owner_addr.setToolTip("Łączy kolumny właściciela i adresu")
 
@@ -103,8 +111,8 @@ class SettingsWindow(QMainWindow):
         if self.settings.value('DarkMode', False, type=bool) == True:
             self.dark_mode.setChecked(True)
 
-        self.full_scene = QCheckBox('FullScene', self)
-        if self.settings.value('FullScene', True, type=bool) == True:
+        self.full_scene = QCheckBox('Full Screen', self)
+        if self.settings.value('FullScreen', True, type=bool) == True:
             self.full_scene.setChecked(True)
         
         """
@@ -203,7 +211,7 @@ class SettingsWindow(QMainWindow):
         self.settings.setValue("DarkMode", self.dark_mode.isChecked())
         self.settings.setValue("MapStaysOnTopHint", self.map_flag.isChecked())
         self.settings.setValue("FullID", self.points_id.isChecked())
-        self.settings.setValue("FullScene", self.full_scene.isChecked())
+        self.settings.setValue("FullScreen", self.full_scene.isChecked())
         #self.settings.setValue("UproszczonaMapa", self.uproszczona_mapa.isChecked())
         #settings.setValue("windowSize", self.size())
         self.close()
@@ -212,6 +220,15 @@ class SettingsWindow(QMainWindow):
         for i, k in self.save_value:
             self.settings.setValue(i, k)
         self.close()
+
+    def change_path_settings(self):
+        if not hasattr(self, 'settings_window') or self.settings_window is None:
+            self.settings_window = WorkspaceSettingsWindow(file_manager, parent=self)
+            self.settings_window.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+
+        self.settings_window.show()
+        self.settings_window.raise_()
+        self.settings_window.activateWindow()
 
 
 if __name__ == '__main__':

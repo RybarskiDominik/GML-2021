@@ -33,9 +33,8 @@ logger = logging.getLogger(__name__)
 
 from docx import Document
 from model.python_docx_replace import docx_replace
-from function.FileMenager import FileManager
-
-file_management = FileManager()
+from FileManager.FileManager import file_manager
+#file_manager = FileManager()
 
 
 class BooleanComboBoxDelegate(QStyledItemDelegate):
@@ -170,8 +169,9 @@ class GML_Handler(QMainWindow):
         self.settings = QSettings('GML', 'GML Reader')
         self.dark_mode_enabled = self.settings.value('DarkMode', False, type=bool)
 
-        self.Path = file_management.templates_folder_path
-        self.check_path()  # Check if the path is set correctly
+        self.Path = file_manager.templates_notification_folder_path
+        file_manager.path_changed.connect(self.set_file_name_in_QComboBox)
+        #self.check_path()  # Check if the path is set correctly
 
         self.setWindowTitle("GML Handler")
         self.setBaseSize(450, 430)
@@ -205,14 +205,25 @@ class GML_Handler(QMainWindow):
         self.add_file.setFixedHeight(25)
         self.add_file.setToolTip("Dodaj formatki *.DOCX")
         self.add_file.clicked.connect(self.set_file_name_in_QComboBox)
-        self.add_file.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(self.Path)))
+        self.add_file.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(file_manager.templates_notification_folder_path)))
 
         self.refresh_button = QPushButton(self)
         #self.refresh_button.setText("Odśwież")
         self.refresh_button.setFixedWidth(25)
         self.refresh_button.setFixedHeight(25)
         self.refresh_button.setToolTip("Odśwież listę plików")
-        self.refresh_button.clicked.connect(lambda: self.set_file_name_in_QComboBox)
+        self.refresh_button.clicked.connect(self.set_file_name_in_QComboBox)
+
+        self.export_button = QPushButton(self)
+        if self.dark_mode_enabled:
+            self.export_button.setIcon(QtGui.QIcon(file_manager.get_stylesheets_path("Strzałka-export-light")))
+        else:
+            self.export_button.setIcon(QtGui.QIcon(file_manager.get_stylesheets_path("Strzałka-export-dark")))
+        self.export_button.setIconSize(QtCore.QSize(22, 22))
+        self.export_button.setFixedWidth(25)
+        self.export_button.setFixedHeight(25)
+        self.export_button.clicked.connect(self.export)
+        self.export_button.setToolTip("Eksportuje dane, zmiany z tabeli nie są brane pod uwagę.")
 
         self.gml_button = QPushButton('Wypełnij', self)
         self.gml_button.setDisabled(True)
@@ -236,13 +247,6 @@ class GML_Handler(QMainWindow):
         self.btn_upr.setCheckState(Qt.Checked)
         self.btn_upr.setToolTip("Uproszczone dane w tabeli.")
     
-        self.export_button = QPushButton('Exportuj', self)
-        self.export_button.setFixedWidth(60)
-        self.export_button.setFixedHeight(25)
-        self.export_button.move(2, 2)
-        self.export_button.clicked.connect(self.export)
-        self.export_button.setToolTip("Eksportuje dane, zmiany z tabeli nie są brane pod uwagę.")
-
         self.btn_pol = QCheckBox('Ustalenie', self)
         self.btn_pol.move(102, 20)
         self.btn_pol.stateChanged.connect(lambda state: self.request_turn_on_polygon_selection() if state == 2 else self.request_find_overlap_polygons())  # turn_off_polygon_selection
@@ -264,10 +268,10 @@ class GML_Handler(QMainWindow):
         button_layout.addWidget(self.main_docx_path)
         button_layout.addWidget(self.add_file)
         button_layout.addWidget(self.refresh_button)
+        button_layout.addWidget(self.export_button)
         button_layout.addStretch(1)
         button_layout.addWidget(self.gml_button)
         button_layout.addWidget(self.docx_button)
-        button_layout.addWidget(self.export_button)
         button_layout.addStretch(1)
         button_layout.addWidget(self.btn_upr)
         button_layout.addStretch(1)
@@ -289,7 +293,7 @@ class GML_Handler(QMainWindow):
         
         # Ustaw ikony dla wszystkich przycisków
         for button, icon_name, size in icons_config:
-            icon_path = file_management.get_icon_path(icon_name, self.dark_mode_enabled)
+            icon_path = file_manager.get_icon_path(icon_name, self.dark_mode_enabled)
             button.setIcon(QtGui.QIcon(icon_path))
             button.setIconSize(size)
 
@@ -303,14 +307,13 @@ class GML_Handler(QMainWindow):
         
         self.gml_button.setDisabled(False)
 
-    def set_file_name_in_QComboBox(self, path_to_folder=None):
-        self.check_path()
-
+    def set_file_name_in_QComboBox(self):
+        #self.check_path()
+        #print("Setting folder names in QComboBox:", file_manager.templates_notification_folder_path)
         # Clear the QComboBox
         self.main_docx_path.clear()
         
-        if not path_to_folder:
-            path_to_folder = self.Path
+        path_to_folder = file_manager.templates_notification_folder_path
 
         # Check if the path exists and is a directory
         if os.path.isdir(path_to_folder):
@@ -371,6 +374,8 @@ class GML_Handler(QMainWindow):
                 if self.proj_data is not None:
                     data = data | self.proj_data
 
+                data = {k: v for k, v in data.items() if v is not None and str(v).strip() != ""}
+                #print("Filling docx with data:", data)
                 doc = Document(path_to_docx)
                 docx_replace(doc, data)
 
@@ -401,12 +406,12 @@ class GML_Handler(QMainWindow):
             "imieMatki", "plec", "pesel", "regon", "status", "informacjaOSmierci", "IDM", "kraj",
             "miejscowosc", "kodPocztowy", "ulica", "numerPorzadkowy", "numerLokalu", "KORES", "kraj_Kores.", 
             "miejscowosc_Kores.", "kodPocztowy_Kores.", "ulica_Kores.", "numerPorzadkowy_Kores.",
-            "numerLokalu_Kores.", "grupaRejestrowa", "idJednostkiRejestrowej", "DZIALKA-ALL"
+            "numerLokalu_Kores.", "grupaRejestrowa", "idJednostkiRejestrowej", "Sąsiadujące działki", "DZIALKA-ALL"
             ]
         
         easy_columns = [
             "idDzialki", "Działka", "numerKW", "PODMIOT", "ADRES_PODMIOT", "MIEJSCOWOŚĆ_PODMIOT", 
-            "KORES", "ADRES_KORES.", "MIEJSCOWOŚĆ_KORES.", "DZIALKA-ALL"
+            "KORES", "ADRES_KORES.", "MIEJSCOWOŚĆ_KORES.", "Sąsiadujące działki", "DZIALKA-ALL"
         ]
         
         df = self.table_model.get_dataframe()
@@ -503,12 +508,12 @@ class GML_Handler(QMainWindow):
     def handle_polygons_found(self, data):
         """Obsługuje wyniki znalezionych poligonów."""
         self.update_table(data)
-        print("Polygons found:", data)
+        #print("Polygons found:", data)
 
     def handle_overlap_polygons_found(self, data):
         """Obsługuje wyniki nakładających się poligonów."""
         self.update_table(data)
-        print("Overlap polygons found:", data)
+        #print("Overlap polygons found:", data)
 
     def update_table(self, df):
         """Aktualizuje widok tabeli."""
@@ -570,4 +575,7 @@ class GML_Handler(QMainWindow):
 
 
 if __name__ == '__main__':
-    pass
+    app = QApplication(sys.argv)
+    main_window = GML_Handler()
+    main_window.show()
+    sys.exit(app.exec())

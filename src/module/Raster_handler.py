@@ -245,4 +245,19 @@ class Raster_handler(QMainWindow):
         self.search_in_map.emit()
 
 if __name__ == '__main__':
-    pass
+
+    # ['SkorowidzeOrtofotomapy2024', 'SkorowidzeOrtofotomapy2023', 'SkorowidzeOrtofotomapy2022', 'SkorowidzeOrtofotomapyStarsze', 'SkorowidzeOrtofotomapyZasiegi2024', 'SkorowidzeOrtofotomapyZasiegi2023', 'SkorowidzeOrtofotomapyZasiegi2022', 'SkorowidzeOrtofotomapyZasiegiStarsze']
+
+    ORTOFOTOMAPA_WMS_URL = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/SkorowidzeWgAktualnosci?"
+    LAYER_NAME = "SkorowidzeOrtofotomapy2022"
+    LAYER_NAME = "SkorowidzeOrtofotomapyStarsze"
+
+    url = "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/SkorowidzeWgAktualnosci?SERVICE=WMS&REQUEST=GetCapabilities"
+
+    x = 6580874.94
+    y = 5486367.14
+
+    app = QApplication(sys.argv)
+    table = Raster_handler()
+    table.show()
+    sys.exit(app.exec())

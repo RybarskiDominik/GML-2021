@@ -23,6 +23,23 @@ import pandas as pd
 import requests
 import numpy as np
 
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QBrush, QColor, QFont, QPen
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QGraphicsEllipseItem,
+    QGraphicsItem,
+    QGraphicsScene,
+    QGraphicsTextItem,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+)
+
 import rasterio
 from rasterio.warp import transform
 import rasterio.transform
@@ -30,7 +47,8 @@ from pyproj import CRS
 
 from function.search_in_geoportal import open_parcel_in_geoportal
 from function.search_in_street_view import open_parcel_in_street_view
-from model.GML_processing_by_ET_Main import GMLParser
+from GML_processing.GML_processing_by_ET_Main_obf import GMLParser
+from map_view.GraphicView_list import DraggableItemFrame
 
 import logging
 import math
@@ -51,9 +69,12 @@ else:
 
 class QDMGraphicsView(QGraphicsView):
     position_clicked = Signal(QPointF)
+    rectangle_selected = Signal(QRectF)
     def __init__(self, scene=None, parent=None):
         super().__init__(scene, parent)
         self.setAcceptDrops(True)
+
+        self.setDragMode(QGraphicsView.RubberBandDrag)
 
         #"""
         self.zoom_in_factor = 1.25
@@ -61,13 +82,17 @@ class QDMGraphicsView(QGraphicsView):
         self.zoom_clamp = True
         self.zoom_step = 1
         self.zoom = 10
-        self.zoom_ramge = [0, 30]
+        self.zoom_range = [0, 25]
         #"""
 
         #self.minZoom = 0
         #self.maxZoom = 80.0
 
         self.selecting_position = False
+
+        self.selecting_rect = False
+        self.rubber_band_origin = QPoint()
+        self.rubber_band_rect_item = None
 
         self.middle_mouse_button_pressed = False
         self.last_mouse_position = QPoint()
@@ -91,7 +116,6 @@ class QDMGraphicsView(QGraphicsView):
         self.resetTransform()
         self.zoom = 10
 
-    #"""
     def wheelEvent(self, event):
         zoom_out_factor = 1 / self.zoom_in_factor
     
@@ -103,15 +127,14 @@ class QDMGraphicsView(QGraphicsView):
             self.zoom -= self.zoom_step
 
         clamped = False
-        if self.zoom < self.zoom_ramge[0]: self.zoom, clamped = self.zoom_ramge[0], True
-        if self.zoom > self.zoom_ramge[1]: self.zoom, clamped = self.zoom_ramge[1], True
+        if self.zoom < self.zoom_range[0]: self.zoom, clamped = self.zoom_range[0], True
+        if self.zoom > self.zoom_range[1]: self.zoom, clamped = self.zoom_range[1], True
 
 
         if not clamped or self.zoom_clamp is False:
             self.scale(zoom_factor, zoom_factor)
     
     """
-
     def wheelEvent(self, event):
         delta = event.angleDelta().y()  # Pobierz kierunek obrotu kółka myszy
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)  # Przesuń widok tak, aby kursor myszy był w centrum
@@ -134,6 +157,14 @@ class QDMGraphicsView(QGraphicsView):
         elif event.button() == Qt.RightButton:
             # NIE wywołuj super().mousePressEvent(event)
             self.contextMenuEvent(event)  # Ręcznie wywołujemy menu kontekstowe
+        elif event.button() == Qt.LeftButton and self.selecting_rect:
+            self.rubber_band_origin = event.position().toPoint()
+            if self.rubber_band_rect_item:
+                self.scene().removeItem(self.rubber_band_rect_item)
+            self.rubber_band_rect_item = QGraphicsRectItem(QRectF(self.mapToScene(self.rubber_band_origin),
+                                                                   self.mapToScene(self.rubber_band_origin)))
+            self.rubber_band_rect_item.setPen(QPen(Qt.blue, 1, Qt.DashLine))
+            self.scene().addItem(self.rubber_band_rect_item)
         else:
             if self.selecting_position:
                 self.selecting_position = False
@@ -147,6 +178,13 @@ class QDMGraphicsView(QGraphicsView):
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.selecting_rect:
+            if self.rubber_band_rect_item:
+                rect = self.rubber_band_rect_item.rect()
+                self.rectangle_selected.emit(rect)  # emitujemy bbox w jednostkach sceny
+                self.scene().removeItem(self.rubber_band_rect_item)
+                self.rubber_band_rect_item = None
+                self.stop_rect_selection()
         if event.button() == Qt.MiddleButton:
             self.middle_mouse_button_pressed = False
             self.setCursor(Qt.ArrowCursor)
@@ -165,6 +203,11 @@ class QDMGraphicsView(QGraphicsView):
             # Przesuń widok
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() + offset.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() + offset.y())
+        elif self.selecting_rect and self.rubber_band_rect_item:
+            # aktualizacja rozmiaru prostokąta
+            rect = QRectF(self.mapToScene(self.rubber_band_origin),
+                          self.mapToScene(event.position().toPoint())).normalized()
+            self.rubber_band_rect_item.setRect(rect)
         else:
             super().mouseMoveEvent(event)
 
@@ -177,21 +220,81 @@ class QDMGraphicsView(QGraphicsView):
     def contextMenuEvent(self, event):
         # Pokaż menu kontekstowe
         menu = QMenu(self)
-        check_action = QAction("Sprawdź zaznaczone punkty", self)
+        copy_action = QAction("Kopiuj zaznaczone działki", self)
+        copy_action.triggered.connect(self.copy_selected_parcels)
+        menu.addAction(copy_action)
+
+        check_action = QAction("Kopiuj zaznaczone punkty", self)
         check_action.triggered.connect(self.check_selected_points)
         menu.addAction(check_action)
+
         menu.exec(event.globalPos())
+
+    def copy_selected_parcels(self):
+        selected_ids = []
+        for item in self.scene().selectedItems():
+            if isinstance(item, MyQGraphicsPolygonItem) and item.id is not None:
+                parcel_number = item.id.split(".")[-1]
+                selected_ids.append(parcel_number)
+
+        if selected_ids:
+            QApplication.clipboard().setText(", ".join(map(str, selected_ids)))
+            print("Skopiowano do schowka:", selected_ids)
+        else:
+            print("Brak zaznaczonych działek.")
 
     def check_selected_points(self):
         selected = []
         for item in self.scene().items():
             if isinstance(item, CustomEllipse) and item.isSelected():
-                selected.append(item.parent_item.id_punktu)
+                selected.append(item.parent_item.id_punktu.split(".")[-1])
 
         if selected:
+            QApplication.clipboard().setText(", ".join(map(str, selected)))
             print("Zaznaczone ID punktów:", selected)
         else:
             print("Brak zaznaczonych punktów.")
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            # usuń zaznaczenie wszystkich działek
+            for item in self.scene().selectedItems():
+                if isinstance(item, MyQGraphicsPolygonItem):
+                    item.setSelected(False)
+            print("❌ Usunięto zaznaczenie działek")
+        else:
+            super().keyPressEvent(event)
+
+    def set_external_signal(self, signal):
+        """Podłączamy zewnętrzny sygnał wysyłający id działki"""
+        signal.connect(self.highlight_parcel_by_id)
+
+    def highlight_parcel_by_id(self, parcel_id):
+        # szukamy poligonu po ID
+        for item in self.scene().items():
+            if isinstance(item, MyQGraphicsPolygonItem) and item.id == parcel_id:
+                # ustaw kolor tymczasowy
+                item.setColorForDuration(QtCore.Qt.green, 1000)
+                
+                # przybliżenie / centrum widoku na poligon
+                if hasattr(self, 'centerOn'):  # jeśli self jest QGraphicsView
+                    self.centerOn(item)
+                    # opcjonalnie skalowanie, np. 2x zoom:
+                    # self.resetTransform()
+                    # self.scale(2, 2)
+                break
+
+    def start_rect_selection(self):
+        """Wywołaj tę funkcję, aby włączyć tryb wyboru prostokątem."""
+        self.selecting_rect = True
+
+    def stop_rect_selection(self):
+        """Wywołaj tę funkcję, aby wyłączyć tryb wyboru prostokątem."""
+        self.selecting_rect = False
+        if self.rubber_band_rect_item:
+            self.scene().removeItem(self.rubber_band_rect_item)
+            self.rubber_band_rect_item = None
+
 
 class DraggableTextItem(QGraphicsSimpleTextItem):
     def __init__(self, text, parent=None):
@@ -219,16 +322,38 @@ class DraggableTextItem(QGraphicsSimpleTextItem):
 class MyQGraphicsPolygonItem(QGraphicsPolygonItem):
     def __init__(self, polygon, id=None, parent=None):
         super(MyQGraphicsPolygonItem, self).__init__(polygon, parent)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.id = id
 
         self.color_timer = QTimer()
         self.color_timer.timeout.connect(self.resetPolygonColor)
 
         self.setFlag(QGraphicsItem.ItemStacksBehindParent, False)
+        self.highlight_brush = QBrush(QColor(255, 255, 0, 100))  # półprzezroczyste żółte
+        self.highlight_z = -10  # pod poligonem
+        self.temp_color_brush = None
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             if self.id != None:
+                modifiers = QApplication.keyboardModifiers()
+                if modifiers & Qt.ShiftModifier:
+                    self.setSelected(not self.isSelected())
+                    event.ignore()  # przekaż do QGraphicsView, aby zaznaczanie działało
+                    return
+
+                """modifiers = QApplication.keyboardModifiers()
+                if modifiers & Qt.ControlModifier:
+                    # przełącz selekcję (toggle)
+                    self.setSelected(not self.isSelected())
+                elif modifiers & Qt.ShiftModifier:
+                    # dodaj do selekcji
+                    self.setSelected(True)
+                else:
+                    # odznacz inne i zaznacz tylko ten
+                    for item in self.scene().selectedItems():
+                        item.setSelected(False)
+                    self.setSelected(True)"""
 
                 connect.EmitID.send_item(self.id)
                 print(f"Polygon {self.id} clicked.")
@@ -237,39 +362,53 @@ class MyQGraphicsPolygonItem(QGraphicsPolygonItem):
                     open_parcel_in_geoportal(self.id)
                     print(f"Searching {self.id} in browser...")
                     data.search_parcel_by_id = False
-                self.setColorForDuration(QtCore.Qt.green, 500)
+                
+                #self.setColorForDuration(QtCore.Qt.green, 500)
 
             else:
                 return
-        super().mousePressEvent(event)
+        
+        super(MyQGraphicsPolygonItem, self).mousePressEvent(event)
+        #super().mousePressEvent(event)
         self.last_mouse_position = event.scenePos()
 
-    def setColorForDuration(self, color, duration): # Set color for selected polygon
-        self.setBrush(QBrush(color))
-        self.setZValue(-10)
-        self.color_timer.start(duration)  # Start the timer to reset the color after the specified duration
-    
-    def resetPolygonColor(self):  # Reset the polygon color
-        self.setBrush(QBrush())
+    def setColorForDuration(self, color, duration):
+        self.temp_color_brush = QBrush(color)
+        self.setZValue(10)  # na wierzch
+        self.color_timer.start(duration)
+
+    def resetPolygonColor(self):
+        self.temp_color_brush = None
+        self.setZValue(0)
         self.color_timer.stop()
 
     def paint(self, painter, option, widget):
+        # Rysowanie highlight pod poligonem jeśli zaznaczony
         if self.isSelected():
-            self.setBrush(QBrush())
-            # Customize the highlight appearance
-            highlight_color = QColor(255, 255, 0)  # Yellow color for highlight
-            highlight_pen = QPen(highlight_color, 2, Qt.SolidLine)
-            painter.setPen(highlight_pen)
-            painter.setBrush(QBrush())
+            painter.save()
+            painter.setBrush(self.highlight_brush)
+            painter.setPen(Qt.NoPen)
+            # narysuj pod poligonem
+            painter.translate(0, 0)
             painter.drawPolygon(self.polygon())
+            painter.restore()
+
+        # Rysowanie samego poligonu
+        if self.temp_color_brush:
+            painter.setBrush(self.temp_color_brush)
         else:
-            super().paint(painter, option, widget)
+            painter.setBrush(QBrush())
+
+        #painter.setPen(QPen(Qt.black, 0.55))  # kontur poligonu
+        painter.setPen(self.pen())
+        painter.drawPolygon(self.polygon())
 
 
-class SelectablePunktItem:
-    def __init__(self, scene, x, y, dot_size, text, font, color='black', id_punktu=None):
+class SelectablePointItem:
+    def __init__(self, scene, x, y, dot_size, text, font, color='black', id_punktu=None, attributes=None):
         self.scene = scene
         self.id_punktu = id_punktu
+        self.attributes = attributes or {}
 
         # Tworzenie elipsy
         self.ellipse = CustomEllipse(self, x - dot_size / 2, y - dot_size / 2, dot_size, dot_size)
@@ -320,6 +459,68 @@ class SelectablePunktItem:
         # Przywróć standardowy wygląd
         self.text.setBrush(QBrush(QColor('black')))
 
+    def open_info_window(self):
+        """
+        Otwiera dialog z informacjami o punkcie (self.attributes).
+        Wyświetla klucz:wartość dla dostępnych pól.
+        """
+        # Jeśli brak danych, pokaż komunikat
+        if not self.attributes:
+            dlg = QDialog()
+            dlg.setWindowTitle(f"Punkt {self.id_punktu}")
+            layout = QVBoxLayout(dlg)
+            layout.addWidget(QLabel("Brak dodatkowych danych."))
+            dlg.exec()
+            return
+
+        dlg = QDialog()
+        dlg.setWindowTitle(f"Punkt: {self.id_punktu}")
+        dlg.setMinimumWidth(380)
+        dlg.setMinimumHeight(400)
+        layout = QVBoxLayout(dlg)
+
+        # Lista pól, w preferowanej kolejności (uzupełnij jeśli chcesz inne nazwy)
+        columns = ['idPunktu', 'geometria', 'sposobPozyskania',
+                   'spelnienieWarunkowDokl', 'rodzajStabilizacji',
+                   'oznWMaterialeZrodlowym', 'numerOperatuTechnicznego',
+                   'dodatkoweInformacje']
+
+        # Przygotuj tabelę - 2 kolumny: Pole / Wartość
+        table = QTableWidget()
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(['Pole', 'Wartość'])
+        table.setRowCount(len(columns))
+
+        for i, key in enumerate(columns):
+            val = self.attributes.get(key, '')
+            # Konwertuj np. numpy types / listy na string bezproblemowo
+            try:
+                val_str = str(val)
+            except Exception:
+                val_str = repr(val)
+
+            key_item = QTableWidgetItem(str(key))
+            key_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            val_item = QTableWidgetItem(val_str)
+            val_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            table.setItem(i, 0, key_item)
+            table.setItem(i, 1, val_item)
+
+        table.horizontalHeader().setStretchLastSection(True)
+        table.resizeColumnsToContents()
+
+        layout.addWidget(table)
+
+        # Przycisk zamykania
+        btn_close = QPushButton("Zamknij")
+        btn_close.clicked.connect(dlg.accept)
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        btn_box.addWidget(btn_close)
+        layout.addLayout(btn_box)
+
+        dlg.exec()
+
 # --- Elipsa z podpięciem do punktu ---
 class CustomEllipse(QGraphicsEllipseItem):
     def __init__(self, parent, *args):
@@ -329,6 +530,14 @@ class CustomEllipse(QGraphicsEllipseItem):
     def mousePressEvent(self, event):
         self.parent_item.on_click()
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):  # Przy dwukliku otwieramy okno z informacjami
+        try:
+            self.parent_item.open_info_window()
+        except Exception as e:
+            logging.exception(e)
+            print(e)
+        event.accept()
 
 # --- Tekst z podpięciem do punktu ---
 class CustomText(QGraphicsSimpleTextItem):
@@ -345,6 +554,14 @@ class CustomText(QGraphicsSimpleTextItem):
             self.parent_item.ellipse.setSelected(True)
 
         # NIE wywołujemy super() — aby zapobiec domyślnemu zachowaniu toggle
+        event.accept()
+
+    def mouseDoubleClickEvent(self, event):  # Przy dwukliku otwieramy okno z informacjami
+        try:
+            self.parent_item.open_info_window()
+        except Exception as e:
+            logging.exception(e)
+            print(e)
         event.accept()
 
 
@@ -372,11 +589,13 @@ class data:
     parsed_gml = None
 
     mark = []
+    Archiwalne_obiekty_GML = []
 
     KonturKlasyfikacyjny = []
     KonturUzytkuGruntowego = []
     DzialkaEwidencyjna = []
     PunktGraniczny = []
+    PunktGranicznyNumer = []
     PunktGranicznyOpis = []
     PunktGraniczny_STB = []
     Ogrodzenia = []
@@ -389,13 +608,115 @@ class data:
 
 
 class MapHandler:
-    def __init__(self, scene=None, path=None):
-        #super().__init__()
-        
+    def __init__(self, scene=None, path=None, parent_window=None):
         self.scene = scene
         self.path = path
-
+        self.parent_window = parent_window
         self.data = data()
+        self.draggableFrame = None
+        self.gview = None
+
+
+    def init_graphic_map_view(self, map_widget, map_layout):  # === Tworzenie widoku mapy ===
+        self.scene = QGraphicsScene()
+        self.gview = QDMGraphicsView(map_widget)
+        self.gview.setStyleSheet("""
+                                 QGraphicsView {
+                                     border: none;
+                                     background-color: #e0e0e0;
+                                 }""")
+        self.gview.setScene(self.scene)
+        self.gview.setGeometry(0, 0, 500, 500)
+        self.gview.setAcceptDrops(True)
+        map_layout.addWidget(self.gview, 0, 0, 1, 1)
+
+        margin = 2000
+        expanded_scene_rect = self.scene.sceneRect().adjusted(-margin, -margin, margin, margin)
+        self.scene.setSceneRect(expanded_scene_rect)
+        self.gview.setSceneRect(expanded_scene_rect)
+
+        self.load_DraggableItemFrame(map_widget)  # Po inicjalizacji od razu dodaj DraggableFrame
+
+    def load_visualizations(self, df):  # === Wczytanie wizualizacji (po imporcie GML) ===
+        try:
+            self.load_map(df)
+            if self.draggableFrame:
+                self.draggableFrame.update_list_widget(self._get_lista_warstw())
+        except Exception as e:
+            logging.exception(e)
+            print(e)
+
+    def load_DraggableItemFrame(self, map_widget):  # === Inicjalizacja ramki warstw ===
+        #from GraphicView_list import DraggableItemFrame  # unikamy cyklicznego importu
+        lista = self._get_lista_warstw()
+
+        self.draggableFrame = DraggableItemFrame(x=5, y=5, h=270, lista=lista)
+        self.draggableFrame.setParent(map_widget)
+        self.draggableFrame.list_signal.connect(self.hide_items_by_list)
+        self.draggableFrame.raise_()
+
+    def _get_lista_warstw(self):  # === Pomocnicza funkcja budująca listę warstw ===
+        return [
+            ("EGB_DzialkaEwidencyjna", self.data.DzialkaEwidencyjna, True),
+            ("EGB_PunktGraniczny", self.data.PunktGraniczny, True),
+            ("EGB_PunktGranicznyNumer", self.data.PunktGranicznyNumer, False),
+            ("EGB_PunktGranicznyOpis", self.data.PunktGranicznyOpis, False),
+            ("EGB_KonturKlasyfikacyjny", self.data.KonturKlasyfikacyjny, False),
+            ("EGB_KonturUzytkuGruntowego", self.data.KonturUzytkuGruntowego, False),
+            ("EGB_Budynek", self.data.Budynek, True),
+            ("EGB_AdresNieruchomosci", self.data.AdresNieruchomosci, True),
+            ("BDOT_Budynek", self.data.Budynek_BDOT, True),
+            ("OT_Ogrodzenia", self.data.Ogrodzenia, True),
+            ("OT_Budowle", self.data.Budowle, True),
+            ("Archiwalne obiekty GML", self.data.Archiwalne_obiekty_GML, True),
+            ("Rastry", self.data.Raster2000, True),
+            ("Mark points", self.data.mark, True)
+        ]
+
+    def refresh_layer_list(self):  # === Automatyczne odświeżenie listy warstw po dodaniu nowego elementu ===
+        if self.draggableFrame:
+            self.draggableFrame.update_list_widget(self._get_lista_warstw())
+
+    def refresh_map_view(self):  # === Odświeżanie wizualizacji mapy oraz dostosowanie widoku ===
+        try:
+            if not hasattr(self, "gview") or self.gview is None:
+                print("Brak obiektu QGraphicsView — nie można odświeżyć mapy.")
+                return
+
+            # Pobierz dane graficzne z GML
+            if hasattr(self.parent_window, "gml"):
+                df = self.parent_window.gml.df_GML_graphic_data
+            else:
+                print("Brak GML Parsera — nie można odświeżyć mapy.")
+                return
+
+            # Załaduj wizualizacje (czyści scenę i rysuje ponownie)
+            self.load_visualizations(df)
+
+            # Aktualizacja sceny i widoku
+            self.scene.setSceneRect(self.scene.itemsBoundingRect())
+
+            margin = 2000
+            expanded_scene_rect = self.scene.sceneRect().adjusted(-margin, -margin, margin, margin)
+            self.scene.setSceneRect(expanded_scene_rect)
+            self.gview.setSceneRect(expanded_scene_rect)
+            self.gview.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+            self.gview.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+
+            # Ustaw widoczność warstw po odświeżeniu
+            if self.draggableFrame:
+                lista = self._get_lista_warstw()
+                self.set_map_items_visible_by_list(lista)
+                self.draggableFrame.update_list_widget(lista)
+
+            # Reset powiększenia
+            if hasattr(self.gview, "reset_zoom"):
+                self.gview.reset_zoom()
+
+        except Exception as e:
+            logging.exception("Błąd podczas odświeżania widoku mapy: %s", e)
+            print("Błąd przy odświeżaniu widoku mapy:", e)
+
 
     def find_parcel_in_geoportal(self):
         data.search_parcel_by_id = True
@@ -403,6 +724,22 @@ class MapHandler:
     def find_parcel_in_street_view(self):
         data.EPSG= self.data.EPSG
         data.search_in_street_view = True
+
+
+    def add_layer(self, layer_name: str, items: list, visible: bool = True):
+        """Dodaje nową warstwę do mapy i danych"""
+        if not hasattr(self.data, layer_name):
+            setattr(self.data, layer_name, [])
+
+        layer_data = getattr(self.data, layer_name)
+        layer_data.extend(items)
+
+        # Ustaw widoczność elementów
+        for item in items:
+            item.setVisible(visible)
+            item.setZValue(10)
+
+        print(f"✅ Dodano warstwę: {layer_name} ({len(items)} elementów)")
 
 
     def add_selected_polygon_to_list(self):
@@ -450,7 +787,7 @@ class MapHandler:
                     overlapping_pairs.append((id1, id2))
                     bordering_polygons_set.update([id1, id2])
 
-        self.turn_off_polygon_selection()
+        #self.turn_off_polygon_selection()
 
         # Prepare the DataFrame for overlapping pairs
         overlapping_data = [[i+1, pair[0]] for i, pair in enumerate(overlapping_pairs)]
@@ -478,7 +815,7 @@ class MapHandler:
             print(f"Overlap between polygons: {pair[0]} and {pair[1]}")
             bordering_polygons.append([id, pair[0]])
             bordering_polygons.append([id, pair[1]])
-        self.turn_off_polygon_selection()
+        #self.turn_off_polygon_selection()
         columns = ['ID', 'Działka']
         df_overlap_polygons = pd.DataFrame(bordering_polygons, columns=columns)
         return df_overlap_polygons
@@ -501,17 +838,50 @@ class MapHandler:
         if not bordering_polygons and len(selected_polygons) == 1:
             bordering_polygons.append(next(iter(selected_polygons)))
 
-        self.turn_off_polygon_selection()
+
+        df_neighbors = self.find_neighboring_polygons()
+        #self.turn_off_polygon_selection()
 
         columns = ['Działka']
         bordering_polygons = pd.DataFrame(bordering_polygons, columns=columns)
+
+        bordering_polygons = bordering_polygons.merge(df_neighbors, on='Działka', how='left')
+
         return bordering_polygons
+
+    def find_neighboring_polygons(self):
+        selected_polygons = self.add_selected_polygon_to_list()  # {id: polygon}
+        neighbors_dict = {id: set() for id in selected_polygons}  # słownik: id -> set sąsiadów
+
+        # Sprawdzenie nakładania się / kolizji działek
+        for id1, polygon1 in selected_polygons.items():
+            for id2, polygon2 in selected_polygons.items():
+                if id1 != id2 and id1 < id2:  # unikamy sprawdzania samego siebie i duplikatów
+                    if polygon1.collidesWithItem(polygon2):
+                        neighbors_dict[id1].add(id2)
+                        neighbors_dict[id2].add(id1)
+
+        # Jeśli wybrano tylko jedną działkę, dodaj ją do listy
+        if not any(neighbors_dict.values()) and len(selected_polygons) == 1:
+            only_id = next(iter(selected_polygons))
+            neighbors_dict[only_id] = set()
+
+        # Zamiana setów sąsiadów na listę lub string z numerami działek
+        data_for_df = []
+        for id, neighbors in neighbors_dict.items():
+            neighbors_str = ', '.join([str(n).rsplit('.', 1)[-1] for n in sorted(neighbors)]) if neighbors else ''
+            data_for_df.append([id, neighbors_str])
+
+        columns = ['Działka', 'Sąsiadujące działki']
+        df_neighbors = pd.DataFrame(data_for_df, columns=columns)
+
+        return df_neighbors
 
 
     Slot()
     def turn_on_polygon_selection_slot(self):
         """Slot obsługujący żądanie włączenia wyboru poligonów."""
-        self.turn_on_polygon_selection()
+        #self.turn_on_polygon_selection()
 
     @Slot()
     def find_polygons_slot(self):
@@ -916,6 +1286,7 @@ class MapHandler:
             # Add the pixmap item to the scene
             self.scene.addItem(pixmap_item)
             self.data.Raster2000.append(pixmap_item)
+            self.refresh_layer_list()
             
         except Exception as e:
             logging.exception(e)
@@ -1007,10 +1378,16 @@ class MapHandler:
 
 
     def load_map(self, df):
-        self.data.EPSG = GMLParser.get_crs_epsg(self.path)
+        try:
+            self.data.EPSG = GMLParser.get_crs_epsg(self.path)
+        except Exception as e:
+            logging.exception(e)
+            print(e)
+            
         try:
             self.remove_items(self.data.mark)
             self.remove_items(self.data.PunktGraniczny_STB)
+            self.remove_items(self.data.Archiwalne_obiekty_GML)
         except Exception as e:
             logging.exception(e)
             print(e)
@@ -1020,6 +1397,7 @@ class MapHandler:
         for method, data_key in [
             (self.add_DzialkaEwidencyjna, "df_EGB_DzialkaEwidencyjna"),
             (self.add_PunktGraniczny, "df_EGB_PunktGraniczny"),
+            #(self.add_PunktGranicznyNumer, "df_EGB_PunktGraniczny"),
             (self.add_PunktGranicznyOpis, "df_EGB_PunktGraniczny"),
             (self.add_KonturKlasyfikacyjny, "df_EGB_KonturKlasyfikacyjny"),
             (self.add_KonturUzytkuGruntowego, "df_EGB_KonturUzytkuGruntowego"),
@@ -1091,13 +1469,19 @@ class MapHandler:
             nr_dzialki = df["tekst"]
         nr_dzialki = nr_dzialki.fillna(df["idDzialki"].str.rsplit('.', n=1).str.get(-1))
 
-        for id, geom, point, nr, justyfikacja in zip(df['idDzialki'], geometry, df['pos'], nr_dzialki, df['justyfikacja']):
+        for id, geom, point, nr, justyfikacja, koniecWersjaObiekt in zip(df['idDzialki'], geometry, df['pos'], nr_dzialki, df['justyfikacja'], df["koniecWersjaObiekt"]):
             if isinstance(geom, list) and all(isinstance(point, tuple) for point in geom):
                 try:
                     geom = Polygon(geom)
                 except Exception as e:
                     logging.exception(e)
                     print(e)
+                    continue
+
+                if koniecWersjaObiekt is not None and pd.notna(koniecWersjaObiekt):
+                    #print(f"Archiwalny obiekt: {id}, data: {koniecWersjaObiekt}")
+                    polygon = self.add_polygon_id(geom, id, "white", 0.2, -1)
+                    self.data.Archiwalne_obiekty_GML.append(polygon)
                     continue
 
                 polygon = self.add_polygon_id(geom, id, "black", 0.2, -1)
@@ -1130,6 +1514,7 @@ class MapHandler:
 
     def add_PunktGraniczny(self, df):
         self.remove_items(self.data.PunktGraniczny)
+        self.remove_items(self.data.PunktGranicznyNumer)
         geometry = df['geometria']
         nr_punktu = None
         if "tekst" in df.columns:
@@ -1142,7 +1527,9 @@ class MapHandler:
         sposobPozyskania = df["sposobPozyskania"].apply(pd.to_numeric, errors='coerce')
         spelnienieWarunkowDokl = df["spelnienieWarunkowDokl"].apply(pd.to_numeric, errors='coerce')
 
-        for pos, nr, rodzajStabilizacji, sposobPozyskania, spelnienieWarunkowDokl, id in zip(geometry, nr_punktu, rodzajStabilizacji, sposobPozyskania, spelnienieWarunkowDokl, id_punktu):
+        # iterujemy przy pomocy enumerate, aby móc pobrać oryginalny wiersz df.iloc[idx]
+        for idx, (pos, nr, rodzajStabilizacji, sposobPozyskania, spelnienieWarunkowDokl, id, koniecWersjaObiekt) in enumerate(
+                zip(geometry, nr_punktu, rodzajStabilizacji, sposobPozyskania, spelnienieWarunkowDokl, id_punktu, df["koniecWersjaObiekt"])):
             if isinstance(pos, tuple) and len(pos) == 2:
                 y, x = self.swap_coords_xy(pos)
                 if y is None or x is None:
@@ -1150,13 +1537,27 @@ class MapHandler:
 
                 self.add_mark(pos, 'green')
 
+                # utwórz dict z oryginalnego wiersza (jeśli dostępny)
+                try:
+                    attributes = df.iloc[idx].to_dict()
+                except Exception:
+                    # fallback - tylko podstawowe pola
+                    attributes = {
+                        'geometria': pos,
+                        'idPunktu': id,
+                        'tekst': nr,
+                        'rodzajStabilizacji': rodzajStabilizacji,
+                        'sposobPozyskania': sposobPozyskania,
+                        'spelnienieWarunkowDokl': spelnienieWarunkowDokl
+                    }
+
                 # ustawienia tekstu i rozmiaru
                 font = QFont('Times New Roman')
                 font.setPointSizeF(1.2)
                 dot_size = 0.8 if 3 <= rodzajStabilizacji <= 6 else 0.5
                 color = 'white' if 3 <= rodzajStabilizacji <= 6 else 'black'
 
-                punkt_item = SelectablePunktItem(
+                punkt_item = SelectablePointItem(
                     scene=self.scene,
                     x=x,
                     y=y,
@@ -1164,11 +1565,17 @@ class MapHandler:
                     text=str(nr),
                     font=font,
                     color=color,
-                    id_punktu=id
+                    id_punktu=id,
+                    attributes=attributes
                     )
+                
+                if koniecWersjaObiekt is not None and pd.notna(koniecWersjaObiekt):
+                    self.data.Archiwalne_obiekty_GML.append(punkt_item.ellipse)
+                    self.scene.removeItem(punkt_item.text)
+                    continue
 
                 self.data.PunktGraniczny.append(punkt_item.ellipse)
-                self.data.PunktGraniczny.append(punkt_item.text)
+                self.data.PunktGranicznyNumer.append(punkt_item.text)
 
     def add_PunktGranicznyOpis(self, df):
         self.remove_items(self.data.PunktGranicznyOpis)
